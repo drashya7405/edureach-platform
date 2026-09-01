@@ -1,7 +1,5 @@
-// import React from "react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-// import Navbar from "../components/Navbar";
 import HeroSection from "../components/HeroSection";
 import AboutSection from "../components/AboutSection";
 import CoursesSection from "../components/CoursesSection";
@@ -49,17 +47,20 @@ export default function HomePage() {
           <Footer />
         </>
       ) : (
-        <section className="py-0 bg-cream text-center">
-          <h2 className="text-3xl font-bold mb-4">Want to See More?</h2>
-          <p className="text-gray-500 mb-8">
-            Sign up to explore campus life, events, placement statistics,
-            and talk to our AI counselor.
+        <section id="unlock" className="py-16 bg-cream text-center px-4">
+          <h2 className="font-heading text-3xl font-bold text-gray-900 mb-3">Want to See More?</h2>
+          <p className="text-gray-600 max-w-xl mx-auto mb-6 text-base">
+            Sign up to explore campus life, events, placement statistics, and talk to our AI counselor.
           </p>
-          <button onClick={() => setShowSignupPopup(true)}
-            className="bg-maroon text-white px-8 py-3 rounded-lg font-semibold">
+          <button
+            onClick={() => setShowSignupPopup(true)}
+            className="btn-primary bg-maroon text-white px-8 py-3 rounded-xl font-semibold text-base shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+          >
             Sign Up to Unlock
           </button>
-          <Footer />
+          <div className="mt-16">
+            <Footer />
+          </div>
         </section>
       )}
 
