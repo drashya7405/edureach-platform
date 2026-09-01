@@ -18,24 +18,33 @@ export const getDatabaseHealth = () => {
   };
 };
 
-const connectDB = async (): Promise<void> => {
+export const connectDB = async (): Promise<void> => {
+  if (mongoose.connection.readyState === 1) {
+    return;
+  }
+
+  const mongoURI = process.env.MONGODB_URI;
+  if (!mongoURI) {
+    if (process.env.NODE_ENV === "test") return;
+    throw new Error("MONGODB_URI is not defined in environment variables");
+  }
+
   try {
-    const mongoURI = process.env.MONGODB_URI;
-
-    if (!mongoURI) {
-      throw new Error("MONGODB_URI is not defined in environment variables");
-    }
-
-    const conn = await mongoose.connect(mongoURI);
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    console.log(`MongoDB Database Name: ${conn.connection.name}`);
+    const conn = await mongoose.connect(mongoURI, {
+      bufferCommands: false,
+    });
+    console.log(`MongoDB Connected: ${conn.connection.host} (${conn.connection.name})`);
   } catch (error) {
-    if (error instanceof Error) {
-      console.error(`Error connecting to MongoDB: ${error.message}`);
-    } else {
-      console.error(`Error connecting to MongoDB: ${error}`);
+    console.error("Error connecting to MongoDB:", error);
+    if (process.env.NODE_ENV !== "test") {
+      throw error;
     }
-    process.exit(1);
+  }
+};
+
+export const closeDatabaseConnections = async (): Promise<void> => {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
   }
 };
 

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import { verifyToken } from "../utils/jwt.util.ts";
-import type { JWTPayload } from "../utils/jwt.util.ts";
+import { verifyToken, type JWTPayload } from "../utils/jwt.util.ts";
+import { AUTH_COOKIE_NAME } from "../utils/cookie.util.ts";
 
 declare global {
   namespace Express {
@@ -12,16 +12,23 @@ declare global {
 
 const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   try {
-    const authHeader = req.headers.authorization;
+    let token: string | undefined;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      res.status(401).json({ success: false, message: "Access denied. No token provided." });
-      return;
+    // 1. Check HTTP-only cookie first
+    if (req.cookies && req.cookies[AUTH_COOKIE_NAME]) {
+      token = req.cookies[AUTH_COOKIE_NAME];
     }
 
-    const token = authHeader.split(" ")[1];
+    // 2. Check Authorization: Bearer <token> header fallback
+    if (!token && req.headers.authorization?.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
     if (!token) {
-      res.status(401).json({ success: false, message: "Access denied. Token is empty." });
+      res.status(401).json({
+        success: false,
+        message: "Authentication required. Please sign in to continue.",
+      });
       return;
     }
 
@@ -31,16 +38,15 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction): void =
   } catch (error) {
     if (error instanceof Error) {
       if (error.name === "TokenExpiredError") {
-        
-        res.status(401).json({ success: false, message: "Token has expired. Please log in again." });
+        res.status(401).json({ success: false, message: "Session expired. Please sign in again." });
         return;
       }
       if (error.name === "JsonWebTokenError") {
-        res.status(401).json({ success: false, message: "Invalid token. Please log in again." });
+        res.status(401).json({ success: false, message: "Invalid authentication token. Please sign in again." });
         return;
       }
     }
-    res.status(500).json({ success: false, message: "Authentication failed." });
+    res.status(401).json({ success: false, message: "Authentication failed. Please sign in again." });
   }
 };
 

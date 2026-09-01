@@ -38,22 +38,39 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-3">
           {user ? (
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">Hi, {user.name.split(" ")[0]}</span>
-              <button onClick={handleLogout}
-                className="flex items-center gap-1 text-sm bg-maroon/10 text-maroon px-3 py-1.5 rounded-lg hover:bg-maroon hover:text-white transition-colors duration-200">
+              <span className="text-sm font-semibold text-gray-700">Hi, {user.name.split(" ")[0]}</span>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 text-sm bg-maroon/10 text-maroon font-semibold px-3 py-1.5 rounded-lg hover:bg-maroon hover:text-white transition-colors duration-200 cursor-pointer"
+              >
                 <LogOut className="w-4 h-4" /> Logout
               </button>
             </div>
           ) : (
             <>
-              <Link to="/login" className="text-sm text-maroon font-medium hover:text-maroon-dark transition-colors duration-200">Login</Link>
-              <Link to="/signup" className="text-sm bg-maroon text-white px-4 py-2 rounded-lg hover:bg-maroon-dark transition-colors duration-200">Sign Up</Link>
+              <Link
+                to="/login"
+                className="text-sm text-maroon font-bold px-3 py-1.5 hover:text-maroon-dark hover:underline transition-colors duration-200"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/signup"
+                className="btn-primary text-sm px-4 py-2 rounded-lg font-semibold text-white shadow-sm"
+              >
+                Register
+              </Link>
             </>
           )}
         </div>
 
         {/* Mobile hamburger */}
-        <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden text-gray-700">
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="Toggle navigation menu"
+          aria-expanded={menuOpen}
+          className="md:hidden text-gray-700 p-1"
+        >
           {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
       </div>
@@ -62,18 +79,39 @@ export default function Navbar() {
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-gray-100 px-4 py-4 space-y-3">
           {navLinks.map((link) => (
-            <a key={link.label} href={link.href} onClick={() => setMenuOpen(false)}
-              className="block text-gray-700 hover:text-maroon transition-colors duration-200">{link.label}</a>
+            <a
+              key={link.label}
+              href={link.href}
+              onClick={() => setMenuOpen(false)}
+              className="block text-gray-700 hover:text-maroon font-medium transition-colors duration-200"
+            >
+              {link.label}
+            </a>
           ))}
           <div className="pt-3 border-t border-gray-100">
             {user ? (
-              <button onClick={handleLogout} className="flex items-center gap-2 text-maroon font-medium">
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 text-maroon font-bold py-1"
+              >
                 <LogOut className="w-4 h-4" /> Logout
               </button>
             ) : (
-              <div className="flex gap-3">
-                <Link to="/login" onClick={() => setMenuOpen(false)} className="text-maroon font-medium">Login</Link>
-                <Link to="/signup" onClick={() => setMenuOpen(false)} className="bg-maroon text-white px-4 py-2 rounded-lg text-sm">Sign Up</Link>
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/login"
+                  onClick={() => setMenuOpen(false)}
+                  className="text-maroon font-bold py-2 px-3 hover:underline"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/signup"
+                  onClick={() => setMenuOpen(false)}
+                  className="btn-primary px-4 py-2 rounded-lg text-sm text-white font-semibold shadow-sm"
+                >
+                  Register
+                </Link>
               </div>
             )}
           </div>

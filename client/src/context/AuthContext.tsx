@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { getMe } from "../services/auth.service";
+import { getMe, logoutUser } from "../services/auth.service";
 
 interface User {
   id: string;
@@ -11,7 +11,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (token: string) => void;
+  login: (token: string, userData?: User) => void;
   logout: () => void;
 }
 
@@ -22,33 +22,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      getMe()
-        .then((data) => setUser(data.user))
-        .catch(() => {
-          localStorage.removeItem("token");
-          setUser(null);
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  const login = (token: string) => {
-    localStorage.setItem("token", token);
     getMe()
-      .then((data) => setUser(data.user))
+      .then((data) => {
+        setUser(data.user);
+      })
       .catch(() => {
         localStorage.removeItem("token");
         setUser(null);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const login = (token: string, userData?: User) => {
+    localStorage.setItem("token", token);
+    if (userData) {
+      setUser(userData);
+    }
+    getMe()
+      .then((data) => setUser(data.user))
+      .catch(() => {
+        if (!userData) {
+          localStorage.removeItem("token");
+          setUser(null);
+        }
       });
   };
 
   const logout = () => {
     localStorage.removeItem("token");
     setUser(null);
+    void logoutUser();
   };
 
   return (
@@ -58,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used inside AuthProvider");

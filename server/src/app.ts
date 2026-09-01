@@ -1,10 +1,14 @@
-import chatRoutes from "./routes/chat.routes.ts";
 import express from "express";
-import type { Application, Request, Response } from "express";
+import type { Application, Request, Response, NextFunction } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.routes.ts";
+import chatRoutes from "./routes/chat.routes.ts";
+import healthRoutes from "./routes/health.routes.ts";
 import errorHandler from "./middleware/error-handler.middleware.ts";
-import { getDatabaseHealth } from "./config/database.config.ts";
+import { requestLogger } from "./utils/logger.util.ts";
+import { generalApiLimiter } from "./middleware/rate-limiter.middleware.ts";
+import { connectDB } from "./config/database.config.ts";
 
 const app: Application = express();
 
@@ -16,29 +20,35 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
 
-app.get("/api/health", (_req: Request, res: Response) => {
-  const database = getDatabaseHealth();
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(cookieParser());
+app.use(requestLogger);
 
-  res.status(database.state === "connected" ? 200 : 503).json({
-    success: database.state === "connected",
-    message: database.state === "connected" ? "Server is healthy." : "Server is running, but database is not ready.",
-    data: {
-      server: "up",
-      database,
-      auth: {
-        jwtConfigured: Boolean(process.env.JWT_SECRET),
-      },
-      ai: {
-        googleApiConfigured: Boolean(process.env.GOOGLE_API_KEY),
-      },
-      timestamp: new Date().toISOString(),
-    },
-  });
+// Health endpoints
+app.use("/api/health", healthRoutes);
+
+// Rate limiting for API traffic
+app.use("/api", generalApiLimiter);
+
+// Ensure database connection is active for data API routes (skipped in test mode)
+app.use(async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (process.env.NODE_ENV !== "test" && process.env.MONGODB_URI) {
+      await connectDB();
+    }
+    next();
+  } catch (error) {
+    console.error("Database connection failed for request:", error);
+    res.status(503).json({
+      success: false,
+      message: "Database service unavailable. Please check your MongoDB connection.",
+    });
+  }
 });
 
+// Mount application routes
 app.use("/api/auth", authRoutes);
 app.use("/api/chat", chatRoutes);
 

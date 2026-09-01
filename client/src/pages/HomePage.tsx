@@ -1,7 +1,5 @@
-// import React from "react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-// import Navbar from "../components/Navbar";
 import HeroSection from "../components/HeroSection";
 import AboutSection from "../components/AboutSection";
 import CoursesSection from "../components/CoursesSection";
@@ -49,16 +47,19 @@ export default function HomePage() {
           <Footer />
         </>
       ) : (
-        <section className="py-0 bg-cream text-center">
-          <h2 className="text-3xl font-bold mb-4">Want to See More?</h2>
-          <p className="text-gray-500 mb-8">
-            Sign up to explore campus life, events, placement statistics,
-            and talk to our AI counselor.
-          </p>
-          <button onClick={() => setShowSignupPopup(true)}
-            className="bg-maroon text-white px-8 py-3 rounded-lg font-semibold">
-            Sign Up to Unlock
-          </button>
+        <section id="unlock" className="pt-16 pb-0 bg-cream text-center">
+          <div className="max-w-2xl mx-auto px-4 mb-16">
+            <h2 className="font-heading text-3xl sm:text-4xl font-bold text-gray-900 mb-4">Want to See More?</h2>
+            <p className="text-gray-600 text-base mb-8 leading-relaxed">
+              Sign up to explore our campus life, events, department placement statistics, and get instant guidance from our AI counselor.
+            </p>
+            <button
+              onClick={() => setShowSignupPopup(true)}
+              className="btn-primary inline-flex items-center gap-2 px-8 py-3.5 rounded-xl font-bold text-white text-base shadow-lg cursor-pointer"
+            >
+              Sign Up to Unlock
+            </button>
+          </div>
           <Footer />
         </section>
       )}

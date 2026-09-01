@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import User from "../models/user.model.ts";
 import { hashPassword, comparePassword } from "../utils/password.util.ts";
 import { generateToken } from "../utils/jwt.util.ts";
+import { setAuthCookie, clearAuthCookie } from "../utils/cookie.util.ts";
 
 const getRequestMeta = (req: Request) => ({
   email: typeof req.body?.email === "string" ? req.body.email.toLowerCase() : undefined,
@@ -13,16 +14,6 @@ const getRequestMeta = (req: Request) => ({
 export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { name, email, password, phone } = req.body;
-
-    if (!name || !email || !password) {
-      res.status(400).json({ success: false, message: "Name, email, and password are required." });
-      return;
-    }
-
-    if (password.length < 6) {
-      res.status(400).json({ success: false, message: "Password must be at least 6 characters." });
-      return;
-    }
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
@@ -40,6 +31,7 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     });
 
     const token = generateToken({ userId: user._id.toString(), email: user.email });
+    setAuthCookie(res, token);
 
     res.status(201).json({
       success: true,
@@ -56,15 +48,10 @@ export const register = async (req: Request, res: Response, next: NextFunction):
   }
 };
 
-// POST /api/auth/login — Public — Verify credentials, return JWT
+// POST /api/auth/login — Public — Verify credentials, return JWT & set cookie
 export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      res.status(400).json({ success: false, message: "Email and password are required." });
-      return;
-    }
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
@@ -81,6 +68,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     }
 
     const token = generateToken({ userId: user._id.toString(), email: user.email });
+    setAuthCookie(res, token);
 
     res.status(200).json({
       success: true,
@@ -95,6 +83,15 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     console.error("Login failed unexpectedly", getRequestMeta(req), error);
     next(error);
   }
+};
+
+// POST /api/auth/logout — Public/Protected — Clear auth cookie
+export const logout = async (_req: Request, res: Response): Promise<void> => {
+  clearAuthCookie(res);
+  res.status(200).json({
+    success: true,
+    message: "Logged out successfully.",
+  });
 };
 
 // GET /api/auth/me — Protected — Return current user profile
