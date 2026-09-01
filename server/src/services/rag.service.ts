@@ -161,17 +161,12 @@ const createRetrieveTool = (vectorStore: MongoDBAtlasVectorSearch) => {
         }
       } catch (vectorError: any) {
         console.warn(
-          "[RAG:VECTOR_SEARCH_ERROR] Atlas Vector Search similarity query failed, falling back to direct context:",
+          "[RAG:VECTOR_SEARCH_ERROR] Atlas Vector Search query failed:",
           vectorError?.message || vectorError
         );
       }
 
-      // Fallback context from knowledge text
-      const knowledge = await loadKnowledgeBaseText();
-      if (knowledge) {
-        return `Context from EduReach Knowledge Base:\n${knowledge.slice(0, 3000)}`;
-      }
-      return "Information not found in knowledge base.";
+      return "Information not found in knowledge base. Inform the student to contact the admissions team at admissions@edureach.edu.in or +91 9876543210.";
     },
     {
       name: "retrieve",
@@ -204,7 +199,7 @@ const getOrCreateAgent = async () => {
       systemPrompt:
         "You are EduReach Bot, an intelligent, helpful, and friendly AI admissions counselor for EduReach College, Hyderabad. " +
         "ALWAYS use the retrieve tool to search the knowledge base before providing an answer. " +
-        "Provide clear, concise, and structured answers. " +
+        "Provide clear, concise, and structured answers grounded strictly in retrieved information. " +
         "If specific details are not available in the knowledge base, politely say: " +
         "'I don't have that exact detail right now. Please reach out to our admissions team at admissions@edureach.edu.in or +91 9876543210.'",
     });
@@ -230,7 +225,7 @@ export const getRAGResponse = async (question: string): Promise<string> => {
     const lastMessage = messages[messages.length - 1];
 
     if (!lastMessage || !lastMessage.content) {
-      return "I couldn't generate a response. Please ask again or contact our admissions office at admissions@edureach.edu.in.";
+      return "I couldn't retrieve that information right now. Please ask again or contact our admissions office at admissions@edureach.edu.in or call +91 9876543210.";
     }
 
     if (typeof lastMessage.content === "string") {
@@ -239,35 +234,7 @@ export const getRAGResponse = async (question: string): Promise<string> => {
 
     return JSON.stringify(lastMessage.content);
   } catch (error: any) {
-    console.error("[RAG:LLM_GENERATION_ERROR] Primary agent pipeline error:", error?.message || error);
-
-    // Direct LLM fallback with knowledge base file if agent loop encountered an issue
-    try {
-      const knowledge = await loadKnowledgeBaseText();
-      if (knowledge) {
-        const model = getChatModel();
-
-        const prompt = `You are EduReach Bot, the admissions counselor for EduReach College, Hyderabad.
-Answer the following student question accurately using the provided EduReach College knowledge base.
-Be concise, polite, and helpful.
-
-Knowledge Base:
-${knowledge}
-
-Student Question:
-${question}
-
-Answer:`;
-
-        const response = await model.invoke(prompt);
-        if (typeof response.content === "string" && response.content.trim()) {
-          return response.content;
-        }
-      }
-    } catch (fallbackError: any) {
-      console.error("[RAG:DIRECT_FALLBACK_ERROR] Direct LLM prompt fallback failed:", fallbackError?.message || fallbackError);
-    }
-
+    console.error("[RAG:PIPELINE_ERROR] Primary agent pipeline error:", error?.message || error);
     return "I'm having trouble retrieving details right now. Please try asking again or reach out to admissions@edureach.edu.in or +91 9876543210.";
   }
 };

@@ -86,9 +86,10 @@ async function runSafeIndexing() {
   console.log(`      - Output dimensions: ${testEmbedding.length} (Expected: ${RAG_CONFIG.embeddingDimensions})`);
 
   if (testEmbedding.length !== RAG_CONFIG.embeddingDimensions) {
-    console.warn(
-      `      [WARNING] Embedding dimension ${testEmbedding.length} differs from expected ${RAG_CONFIG.embeddingDimensions}. ` +
-      `Ensure Atlas Vector Search index is configured with numDimensions: ${testEmbedding.length}.`
+    throw new Error(
+      `[INDEXING_ABORT] Embedding dimension mismatch: model generated ${testEmbedding.length}D, ` +
+      `but Atlas Vector Search index '${RAG_CONFIG.vectorIndexName}' requires exactly ${RAG_CONFIG.embeddingDimensions}D. ` +
+      `Aborting indexing before modifying database.`
     );
   }
 
@@ -104,8 +105,12 @@ async function runSafeIndexing() {
     const chunk = splits[i]!;
     const chunkEmbedding = await embeddings.embedQuery(chunk.pageContent);
 
-    if (!Array.isArray(chunkEmbedding) || chunkEmbedding.length === 0) {
-      throw new Error(`Failed to generate valid embedding for chunk #${i + 1}`);
+    if (!Array.isArray(chunkEmbedding) || chunkEmbedding.length !== RAG_CONFIG.embeddingDimensions) {
+      throw new Error(
+        `[INDEXING_ABORT] Invalid embedding for chunk #${i + 1}: ` +
+        `expected ${RAG_CONFIG.embeddingDimensions} dimensions, got ${Array.isArray(chunkEmbedding) ? chunkEmbedding.length : "non-array"}. ` +
+        `Aborting before modifying database.`
+      );
     }
 
     docsWithEmbeddings.push({
@@ -121,7 +126,7 @@ async function runSafeIndexing() {
 
     process.stdout.write(`      - Processed chunk ${i + 1}/${splits.length} (${chunkEmbedding.length}D)\r`);
   }
-  console.log(`\n      - All ${docsWithEmbeddings.length} chunk embeddings generated and verified.`);
+  console.log(`\n      - All ${docsWithEmbeddings.length} chunk embeddings generated and verified at ${RAG_CONFIG.embeddingDimensions}D.`);
 
   // 6. Connect to MongoDB
   console.log(`\n[6/8] Connecting to MongoDB Atlas...`);
@@ -149,8 +154,16 @@ async function runSafeIndexing() {
       embedding: { $exists: true, $not: { $size: 0 } },
     });
 
-    if (!sampleStaging || !Array.isArray(sampleStaging.embedding) || sampleStaging.embedding.length === 0) {
-      throw new Error("Staging collection embedding verification failed.");
+    if (
+      !sampleStaging ||
+      !Array.isArray(sampleStaging.embedding) ||
+      sampleStaging.embedding.length !== RAG_CONFIG.embeddingDimensions
+    ) {
+      throw new Error(
+        `[INDEXING_ABORT] Staging collection embedding verification failed: ` +
+        `expected ${RAG_CONFIG.embeddingDimensions}D array, got ${sampleStaging?.embedding?.length ?? "invalid"}. ` +
+        `Live collection left untouched.`
+      );
     }
 
     // Replace live collection safely

@@ -58,7 +58,7 @@ On startup, the server connects to MongoDB, starts Express, and runs a read-only
 | Client | React 19, TypeScript, Vite 6, React Router DOM 7 |
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite`, custom CSS variables, responsive utility classes |
 | UI | Lucide React icons, React Hot Toast notifications |
-| HTTP | Axios with an authorization request interceptor |
+| HTTP | Axios configured with credentials (`withCredentials: true`) for HTTP-only cookie authentication |
 | Server | Node.js, Express 4, TypeScript, `tsx` |
 | Authentication | JSON Web Tokens (`jsonwebtoken`) and `bcryptjs` (10 salt rounds) |
 | Data | MongoDB Atlas, Mongoose, MongoDB native driver |
@@ -168,18 +168,17 @@ edureach-platform/
 - `server.ts` validates environment variables, connects to MongoDB, starts Express on `PORT` (default `3001`), and runs a read-only knowledge-base probe in the background. It never rebuilds or deletes knowledge base documents during startup.
 - `app.ts` enforces production-safe CORS restricted to origins defined in `CLIENT_URL` or `FRONTEND_URL` (with localhost permitted during development), sets 1MB body limits, mounts routes, provides JSON 404 handlers, and applies a centralized error handler that sanitizes error messages and stack traces in production.
 
-### API reference
+#### API reference
 
 All responses use a `success` flag; successful payloads are returned under `data`.
 
 | Method and endpoint | Auth | Request body | Success result | Notes |
 | --- | --- | --- | --- | --- |
 | `GET /api/health` | No | — | Server/database state, JWT and Gemini configuration flags, timestamp | Returns `200` when MongoDB is connected; otherwise `503` |
-| `POST /api/auth/register` | No | `name`, `email`, `password`, optional `phone` | JWT and user object | Requires name/email/password; password must be at least 6 characters; duplicate email returns `409` |
 | `POST /api/auth/register` | No | `name`, `email`, `password`, `phone` (optional) | Sets HTTP-only cookie, returns user object | Validates email, password >= 6 chars; rejects duplicates with `409` |
 | `POST /api/auth/login` | No | `email`, `password` | Sets HTTP-only cookie, returns user object | Incorrect credentials return `401` |
 | `POST /api/auth/logout` | No | — | Clears HTTP-only cookie | Returns 200 on logout |
-| `GET /api/auth/me` | HTTP-only cookie / Bearer JWT | — | Current user excluding password | Missing, invalid, or expired token returns `401` |
+| `GET /api/auth/me` | HTTP-only cookie | — | Current user excluding password | Missing, invalid, or expired session returns `401` |
 | `POST /api/chat/message` | Yes (authMiddleware + rateLimiter) | `message` (1-1000 chars) | `{ message: string }` | Gated on auth and input validation; returns AI counselor response |
 
 ### User model
@@ -241,8 +240,6 @@ Two logical collections are used in `edureach_db`:
 | --- | --- | --- |
 | `users` | Mongoose authentication flow | Registered user records and password hashes |
 | `knowledge_docs` | Native MongoDB client and LangChain | Chunk text, numeric embeddings (3072D), metadata, and timestamps |
-
-`knowledge-doc.model.ts` describes `text`, `embedding`, and flexible `metadata` with timestamps, though RAG vector operations use the native MongoDB collection directly.
 
 `knowledge-doc.model.ts` describes `text`, `embedding`, and flexible `metadata` with timestamps, though RAG vector operations use the native MongoDB collection directly.
 

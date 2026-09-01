@@ -165,5 +165,50 @@ describe("Authentication Endpoints & Middleware Validation", () => {
       assert.equal(res.headers["access-control-allow-origin"], "http://localhost:5173");
       assert.equal(res.headers["access-control-allow-credentials"], "true");
     });
+
+    it("should reject unauthorized Vercel origins in production", async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalClientUrl = process.env.CLIENT_URL;
+
+      try {
+        process.env.NODE_ENV = "production";
+        process.env.CLIENT_URL = "https://edureach.example.com";
+
+        const res = await request(app)
+          .get("/api/health/live")
+          .set("Origin", "https://random-project.vercel.app");
+
+        assert.notEqual(
+          res.headers["access-control-allow-origin"],
+          "https://random-project.vercel.app",
+        );
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+        process.env.CLIENT_URL = originalClientUrl;
+      }
+    });
+
+    it("should allow configured production origin", async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalClientUrl = process.env.CLIENT_URL;
+
+      try {
+        process.env.NODE_ENV = "production";
+        process.env.CLIENT_URL = "https://edureach.example.com";
+
+        const res = await request(app)
+          .get("/api/health/live")
+          .set("Origin", "https://edureach.example.com");
+
+        assert.equal(res.status, 200);
+        assert.equal(
+          res.headers["access-control-allow-origin"],
+          "https://edureach.example.com",
+        );
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+        process.env.CLIENT_URL = originalClientUrl;
+      }
+    });
   });
 });
