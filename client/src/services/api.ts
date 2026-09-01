@@ -8,6 +8,7 @@ const baseURL = cleanBaseURL.startsWith("http") && !cleanBaseURL.endsWith("/api"
 
 const API = axios.create({
   baseURL,
+  withCredentials: true,
 });
 
 API.interceptors.request.use((config) => {
@@ -17,5 +18,15 @@ API.interceptors.request.use((config) => {
   }
   return config;
 });
+
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default API;

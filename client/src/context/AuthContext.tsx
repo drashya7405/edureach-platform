@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { getMe } from "../services/auth.service";
+import { getMe, logoutUser } from "../services/auth.service";
 
 interface User {
   id: string;
@@ -22,18 +22,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      getMe()
-        .then((data) => setUser(data.user))
-        .catch(() => {
-          localStorage.removeItem("token");
-          setUser(null);
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    // Attempt to verify session via HTTP-only cookie or local token
+    getMe()
+      .then((data) => {
+        setUser(data.user);
+      })
+      .catch(() => {
+        localStorage.removeItem("token");
+        setUser(null);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const login = (token: string, userData?: User) => {
@@ -54,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     localStorage.removeItem("token");
     setUser(null);
+    void logoutUser();
   };
 
   return (

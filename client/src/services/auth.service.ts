@@ -16,3 +16,11 @@ export const getMe = async () => {
   const res = await API.get("/auth/me");
   return res.data.data; // { user }
 };
+
+export const logoutUser = async () => {
+  try {
+    await API.post("/auth/logout");
+  } catch {
+    // Ignore network error on logout
+  }
+};

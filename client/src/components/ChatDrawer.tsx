@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Send, Bot, User, Minus } from "lucide-react";
+import { X, Send, Bot, User, Minus, AlertCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import { sendMessage } from "../services/chat.service";
@@ -8,6 +9,7 @@ interface Message {
   id: number;
   text: string;
   sender: "user" | "bot";
+  isAuthError?: boolean;
 }
 
 interface ChatDrawerProps {
@@ -21,6 +23,8 @@ const quickQuestions = [
   "What is the fee structure?",
   "How to apply for admissions?",
 ];
+
+const MAX_MESSAGE_LENGTH = 1000;
 
 export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   const { user } = useAuth();
@@ -40,8 +44,12 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   }, [messages]);
 
   const handleSend = async (text?: string) => {
-    const messageText = text || input.trim();
+    const messageText = (text || input).trim();
     if (!messageText || sending) return;
+
+    if (messageText.length > MAX_MESSAGE_LENGTH) {
+      return;
+    }
 
     const userMsg: Message = { id: Date.now(), text: messageText, sender: "user" };
     setMessages((prev) => [...prev, userMsg]);
@@ -53,11 +61,24 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
       const botMsg: Message = { id: Date.now() + 1, text: data.message, sender: "bot" };
       setMessages((prev) => [...prev, botMsg]);
     } catch (err: unknown) {
-      let errorText = "I'm having a little trouble connecting right now. Please try again or reach out to our admissions team.";
-      if (axios.isAxiosError(err) && err.response?.data?.message) {
-        errorText = err.response.data.message;
+      let errorText = "I'm having a little trouble connecting right now. Please try asking again or reach out to our admissions team.";
+      let isAuthErr = false;
+
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 401) {
+          isAuthErr = true;
+          errorText = "Your session has expired. Please sign in to continue chatting with the AI Counselor.";
+        } else if (err.response?.data?.message) {
+          errorText = err.response.data.message;
+        }
       }
-      const errorMsg: Message = { id: Date.now() + 1, text: errorText, sender: "bot" };
+
+      const errorMsg: Message = {
+        id: Date.now() + 1,
+        text: errorText,
+        sender: "bot",
+        isAuthError: isAuthErr,
+      };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setSending(false);
@@ -67,14 +88,18 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed bottom-24 right-6 z-50 h-[520px] w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl flex flex-col">
+    <div
+      role="dialog"
+      aria-label="EduReach AI Counselor Chat"
+      className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 z-50 h-[520px] max-h-[calc(100vh-6rem)] w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl flex flex-col"
+    >
       {/* Header */}
       <div className="relative overflow-hidden bg-gradient-to-r from-maroon via-maroon-dark to-[#41111a] px-4 py-3 flex items-center justify-between">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,214,102,0.22),transparent_32%)]" />
@@ -91,10 +116,18 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
           </div>
         </div>
         <div className="relative z-10 flex items-center gap-1">
-          <button onClick={onClose} className="text-white/70 hover:text-white p-1 transition-colors duration-200">
+          <button
+            onClick={onClose}
+            aria-label="Minimize chat"
+            className="text-white/70 hover:text-white p-1 transition-colors duration-200 rounded"
+          >
             <Minus className="w-4 h-4" />
           </button>
-          <button onClick={onClose} className="text-white/70 hover:text-white p-1 transition-colors duration-200">
+          <button
+            onClick={onClose}
+            aria-label="Close chat"
+            className="text-white/70 hover:text-white p-1 transition-colors duration-200 rounded"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -109,12 +142,29 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
                 <Bot className="w-3 h-3 text-white" />
               </div>
             )}
-            <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed ${
+            <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
               msg.sender === "user"
                 ? "bg-maroon text-white rounded-br-sm"
+                : msg.isAuthError
+                ? "bg-red-50 text-red-900 border border-red-200 rounded-bl-sm shadow-sm"
                 : "bg-white text-gray-800 border border-gray-200 rounded-bl-sm shadow-sm"
             }`}>
-              {msg.text}
+              {msg.isAuthError && (
+                <div className="flex items-center gap-1.5 font-semibold text-red-700 mb-1 text-xs">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Session Notice</span>
+                </div>
+              )}
+              <p>{msg.text}</p>
+              {msg.isAuthError && (
+                <Link
+                  to="/login"
+                  onClick={onClose}
+                  className="inline-block mt-2 text-xs bg-red-700 text-white font-medium px-2.5 py-1 rounded hover:bg-red-800 transition-colors"
+                >
+                  Sign In Now &rarr;
+                </Link>
+              )}
             </div>
             {msg.sender === "user" && (
               <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
@@ -130,10 +180,10 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
               <Bot className="w-3 h-3 text-white" />
             </div>
             <div className="bg-white border border-gray-200 px-3 py-2 rounded-2xl rounded-bl-sm shadow-sm">
-              <div className="flex gap-1">
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.4s]" />
+              <div className="flex gap-1 items-center h-4">
+                <span className="w-1.5 h-1.5 bg-maroon rounded-full animate-bounce" />
+                <span className="w-1.5 h-1.5 bg-maroon rounded-full animate-bounce [animation-delay:0.2s]" />
+                <span className="w-1.5 h-1.5 bg-maroon rounded-full animate-bounce [animation-delay:0.4s]" />
               </div>
             </div>
           </div>
@@ -144,11 +194,15 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
       {/* Quick questions */}
       {messages.length === 1 && (
         <div className="px-3 py-2 bg-gray-50 border-t border-gray-100">
-          <p className="text-xs text-gray-500 mb-2">Quick questions:</p>
+          <p className="text-xs text-gray-500 mb-2 font-medium">Suggested questions:</p>
           <div className="flex flex-wrap gap-1.5">
             {quickQuestions.map((q) => (
-              <button key={q} onClick={() => handleSend(q)}
-                className="text-xs px-2.5 py-1 bg-white border border-maroon/20 text-maroon rounded-full hover:bg-maroon hover:text-white transition-colors duration-200">
+              <button
+                key={q}
+                onClick={() => void handleSend(q)}
+                disabled={sending}
+                className="text-xs px-2.5 py-1 bg-white border border-maroon/20 text-maroon rounded-full hover:bg-maroon hover:text-white transition-colors duration-200 disabled:opacity-50"
+              >
                 {q}
               </button>
             ))}
@@ -158,12 +212,32 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
 
       {/* Input */}
       <div className="bg-white border-t border-gray-200 p-3">
+        {input.length > 700 && (
+          <div className="text-[11px] text-right mb-1 text-gray-500 font-mono">
+            <span className={input.length >= MAX_MESSAGE_LENGTH ? "text-red-600 font-bold" : ""}>
+              {input.length}
+            </span>
+            /{MAX_MESSAGE_LENGTH}
+          </div>
+        )}
         <div className="flex items-center gap-2">
-          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-            placeholder="Ask a question..." disabled={sending}
-            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-maroon text-sm disabled:opacity-50 transition-colors duration-200" />
-          <button onClick={() => handleSend()} disabled={!input.trim() || sending}
-            className="w-9 h-9 bg-maroon text-white rounded-lg flex items-center justify-center hover:bg-maroon-dark disabled:opacity-50 transition-colors duration-200">
+          <input
+            type="text"
+            value={input}
+            maxLength={MAX_MESSAGE_LENGTH}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask about admissions, courses, fees..."
+            disabled={sending}
+            aria-label="Ask EduReach Bot"
+            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-maroon text-sm disabled:opacity-50 transition-colors duration-200"
+          />
+          <button
+            onClick={() => void handleSend()}
+            disabled={!input.trim() || sending}
+            aria-label="Send message"
+            className="w-9 h-9 bg-maroon text-white rounded-lg flex items-center justify-center hover:bg-maroon-dark disabled:opacity-50 transition-colors duration-200 shrink-0"
+          >
             <Send className="w-4 h-4" />
           </button>
         </div>

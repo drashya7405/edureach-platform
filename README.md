@@ -197,19 +197,25 @@ JWTs contain `userId` and `email`, use `JWT_SECRET`, and expire after `JWT_EXPIR
 
 ## AI counselor and knowledge base
 
-The counselor is a retrieval-augmented generation (RAG) flow implemented in `server/src/services/rag.service.ts`.
+The counselor is a retrieval-augmented generation (RAG) subsystem implemented in `server/src/services/rag.service.ts` with centralized configuration in `server/src/config/rag.config.ts`.
 
-1. At startup, it opens MongoDB database `edureach_db` and collection `knowledge_docs`.
-2. If no valid embedding exists, it reads `server/knowledge-base/edureach-knowledge.txt`, splits it into 1,000-character chunks with 200-character overlap, embeds them with Gemini, and stores the chunks and vectors.
-3. If documents exist but vectors are empty, it deletes those documents and re-indexes them. If valid vectors already exist, it reuses them.
-4. For each chat request, LangChain creates a Gemini agent with a `retrieve` tool. The tool performs a top-3 similarity search against MongoDB Atlas Vector Search.
-5. The agent is instructed to always retrieve before answering, stay concise and professional, and direct users to a counselor if the answer is absent.
+### Architecture & Resource Lifecycle
+1. **Singleton Resource Management**: `MongoClient`, `GoogleGenerativeAIEmbeddings`, `MongoDBAtlasVectorSearch`, and `ChatGoogleGenerativeAI` are initialized once as long-lived singletons, avoiding connection leaks and per-request object creation overhead.
+2. **Non-Destructive Server Startup**: During normal server startup or container restarts, the server only checks if knowledge documents exist. It **never** destructively deletes or rebuilds embeddings on startup.
+3. **Safe Atomic Indexing**: Knowledge base indexing is executed explicitly via `npm run index:knowledge`. It verifies chunk embeddings (768D) and stage documents before replacing the live collection.
+4. **LangChain Retrieval**: The conversational agent invokes the `retrieve` tool, which queries the `edureach_vector_index` Atlas Vector Search index for the top-3 most relevant chunks.
+5. **Resilient Fallback**: If Atlas Vector Search encounters an index error, the system safely falls back to direct knowledge context retrieval and LLM answering without crashing or leaking credentials.
 
-Default models are `gemini-1.5-flash` for chat and `text-embedding-004` (768 dimensions) for embeddings. They can be overridden with environment variables (`GEMINI_CHAT_MODEL`, `GEMINI_EMBEDDING_MODEL`). The RAG service includes automatic fallbacks if retrieval calls fail.
+Default models are `gemini-1.5-flash` for chat and `text-embedding-004` (768 dimensions) for embeddings, configurable via `GEMINI_CHAT_MODEL` and `GEMINI_EMBEDDING_MODEL`.
 
-The knowledge-base document includes college overview, programs and seats, fee structure and scholarships, admissions criteria and dates, placement data, facilities, events, faculty, and contact/office-hour details.
+### Knowledge Base Commands
 
-### Required MongoDB Atlas Vector Search index
+| Command | Purpose | When to run |
+| :--- | :--- | :--- |
+| `npm run index:knowledge` | Splits document, generates 768D embeddings, verifies dimensions, and safely populates `knowledge_docs` | Initial setup, or when `edureach-knowledge.txt` content is updated |
+| `npm run verify:knowledge` | Verifies file readability, embedding generation, MongoDB connection, and document schema | Health checks and post-deployment validation |
+
+### Required MongoDB Atlas Vector Search Index
 
 Create a Vector Search index named **`edureach_vector_index`** on database **`edureach_db`**, collection **`knowledge_docs`** with the following JSON definition:
 
@@ -301,11 +307,35 @@ Then open the URL printed by Vite (normally `http://localhost:5173`). Confirm th
 | `client` | `npm run build` | Type-checks the client and creates a production Vite build |
 | `client` | `npm run lint` | Runs ESLint over the client source |
 | `client` | `npm run preview` | Serves the built client locally |
-| `server` | `npm run dev` | Runs `tsx watch src/server.ts` |
-| `server` | `npm run build` | Runs the TypeScript compiler configuration |
-| `server` | `npm start` | Starts the server through Node with the `tsx` importer |
-| `server` | `npm run seed:rag` | Indexes the knowledge base in MongoDB Atlas on demand |
+| `server` | `npm run dev` | Runs `tsx watch src/server.ts` in development mode |
+| `server` | `npm run build` | Compiles TypeScript into `./dist` |
+| `server` | `npm start` | Runs compiled JavaScript (`node dist/server.js`) |
+| `server` | `npm test` | Runs automated test suite (validation, auth middleware, health, chat) |
+| `server` | `npm run index:knowledge` | Safely indexes knowledge base into MongoDB Atlas Vector Search |
+| `server` | `npm run verify:knowledge` | Verifies knowledge file, embeddings API, and collection schema |
 
-### Deployment
+## Testing
 
-See the detailed Vercel deployment walkthrough for complete step-by-step instructions.
+Run backend unit and validation test suites locally:
+
+```bash
+cd server
+npm test
+```
+
+Tests run in offline test isolation using Node's native test runner (`node:test`) and `supertest`, validating input schemas, HTTP-only cookie authentication, error mapping, and endpoint rate-limiting without requiring live database connections or production credentials.
+
+## Continuous Integration (CI)
+
+A lightweight GitHub Actions workflow (`.github/workflows/ci.yml`) runs automatically on pushes and pull requests to `main`/`master`:
+
+1. **Frontend Job**:
+   - Clean install (`npm ci`)
+   - ESLint validation (`npm run lint`)
+   - TypeScript checking and production bundle build (`npm run build`)
+2. **Backend Job**:
+   - Clean install (`npm ci`)
+   - TypeScript compilation (`npm run build`)
+   - Automated test suite execution (`npm test`)
+
+The workflow requires no external cloud secrets or live databases to validate builds and tests.

@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { verifyToken } from "../utils/jwt.util.ts";
 import type { JWTPayload } from "../utils/jwt.util.ts";
+import { AUTH_COOKIE_NAME } from "../utils/cookie.util.ts";
 
 declare global {
   namespace Express {
@@ -12,16 +13,19 @@ declare global {
 
 const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   try {
-    const authHeader = req.headers.authorization;
+    // 1. Try to read from HTTP-only cookie first
+    let token: string | undefined = req.cookies?.[AUTH_COOKIE_NAME];
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      res.status(401).json({ success: false, message: "Access denied. No token provided." });
-      return;
+    // 2. Fallback to Authorization header: Bearer <token>
+    if (!token && req.headers.authorization?.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1]?.trim();
     }
 
-    const token = authHeader.split(" ")[1];
     if (!token) {
-      res.status(401).json({ success: false, message: "Access denied. Token is empty." });
+      res.status(401).json({
+        success: false,
+        message: "Authentication required. Please log in to continue.",
+      });
       return;
     }
 
@@ -31,16 +35,24 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction): void =
   } catch (error) {
     if (error instanceof Error) {
       if (error.name === "TokenExpiredError") {
-        
-        res.status(401).json({ success: false, message: "Token has expired. Please log in again." });
+        res.status(401).json({
+          success: false,
+          message: "Session has expired. Please log in again.",
+        });
         return;
       }
       if (error.name === "JsonWebTokenError") {
-        res.status(401).json({ success: false, message: "Invalid token. Please log in again." });
+        res.status(401).json({
+          success: false,
+          message: "Invalid authentication token. Please log in again.",
+        });
         return;
       }
     }
-    res.status(500).json({ success: false, message: "Authentication failed." });
+    res.status(401).json({
+      success: false,
+      message: "Authentication failed. Please log in again.",
+    });
   }
 };
 

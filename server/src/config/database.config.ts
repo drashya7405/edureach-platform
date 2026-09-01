@@ -55,4 +55,16 @@ const connectDB = async (): Promise<typeof mongoose> => {
   }
 };
 
+export const closeDatabaseConnections = async (): Promise<void> => {
+  if (mongoose.connection.readyState !== 0) {
+    try {
+      await mongoose.disconnect();
+      cachedPromise = null;
+      console.log("Mongoose disconnected gracefully.");
+    } catch (err) {
+      console.error("Error during Mongoose disconnect:", err);
+    }
+  }
+};
+
 export default connectDB;

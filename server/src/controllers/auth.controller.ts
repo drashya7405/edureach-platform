@@ -2,58 +2,18 @@ import type { Request, Response, NextFunction } from "express";
 import User from "../models/user.model.ts";
 import { hashPassword, comparePassword } from "../utils/password.util.ts";
 import { generateToken } from "../utils/jwt.util.ts";
-
-const getRequestMeta = (req: Request) => ({
-  email: typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : undefined,
-  ip: req.ip,
-  userAgent: req.get("user-agent") || "unknown",
-});
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { AUTH_COOKIE_NAME, getAuthCookieOptions, getClearCookieOptions } from "../utils/cookie.util.ts";
+import { getSafeRequestMeta } from "../utils/logger.util.ts";
+import type { RegisterInput, LoginInput } from "../validators/auth.validator.ts";
 
 // POST /api/auth/register — Public — Create new account
 export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const rawName = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-    const rawEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-    const rawPassword = typeof req.body?.password === "string" ? req.body.password : "";
-    const rawPhone = typeof req.body?.phone === "string" && req.body.phone.trim() ? req.body.phone.trim() : null;
+    const { name, email, password, phone } = req.body as RegisterInput;
 
-    if (!rawName || !rawEmail || !rawPassword) {
-      res.status(400).json({
-        success: false,
-        message: "Full name, email address, and password are required.",
-      });
-      return;
-    }
-
-    if (rawName.length < 2 || rawName.length > 100) {
-      res.status(400).json({
-        success: false,
-        message: "Full name must be between 2 and 100 characters.",
-      });
-      return;
-    }
-
-    if (!EMAIL_REGEX.test(rawEmail)) {
-      res.status(400).json({
-        success: false,
-        message: "Please provide a valid email address.",
-      });
-      return;
-    }
-
-    if (rawPassword.length < 6) {
-      res.status(400).json({
-        success: false,
-        message: "Password must be at least 6 characters.",
-      });
-      return;
-    }
-
-    const existingUser = await User.findOne({ email: rawEmail });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      console.warn("Register blocked: duplicate email", getRequestMeta(req));
+      console.warn("Register blocked: duplicate email", getSafeRequestMeta(req));
       res.status(409).json({
         success: false,
         message: "An account with this email already exists.",
@@ -61,15 +21,18 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       return;
     }
 
-    const hashedPassword = await hashPassword(rawPassword);
+    const hashedPassword = await hashPassword(password);
     const user = await User.create({
-      name: rawName,
-      email: rawEmail,
+      name,
+      email,
       password: hashedPassword,
-      phone: rawPhone,
+      phone: phone || null,
     });
 
     const token = generateToken({ userId: user._id.toString(), email: user.email });
+
+    // Set secure HTTP-only cookie
+    res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 
     res.status(201).json({
       success: true,
@@ -84,10 +47,10 @@ export const register = async (req: Request, res: Response, next: NextFunction):
         },
       },
     });
-    console.info("Register success", { userId: user._id.toString(), ...getRequestMeta(req) });
+    console.info("Register success", { userId: user._id.toString(), ...getSafeRequestMeta(req) });
   } catch (error: any) {
     if (error?.code === 11000) {
-      console.warn("Register blocked: duplicate key", getRequestMeta(req));
+      console.warn("Register blocked: duplicate key", getSafeRequestMeta(req));
       res.status(409).json({
         success: false,
         message: "An account with this email already exists.",
@@ -106,28 +69,19 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       return;
     }
 
-    console.error("Register failed unexpectedly", getRequestMeta(req), error);
+    console.error("Register failed unexpectedly", getSafeRequestMeta(req), error);
     next(error);
   }
 };
 
-// POST /api/auth/login — Public — Verify credentials, return JWT
+// POST /api/auth/login — Public — Verify credentials, return JWT & set cookie
 export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const rawEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-    const rawPassword = typeof req.body?.password === "string" ? req.body.password : "";
+    const { email, password } = req.body as LoginInput;
 
-    if (!rawEmail || !rawPassword) {
-      res.status(400).json({
-        success: false,
-        message: "Email and password are required.",
-      });
-      return;
-    }
-
-    const user = await User.findOne({ email: rawEmail });
+    const user = await User.findOne({ email });
     if (!user) {
-      console.warn("Login failed: user not found", getRequestMeta(req));
+      console.warn("Login failed: user not found", getSafeRequestMeta(req));
       res.status(401).json({
         success: false,
         message: "Invalid email or password.",
@@ -135,9 +89,9 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    const isPasswordValid = await comparePassword(rawPassword, user.password);
+    const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
-      console.warn("Login failed: invalid password", getRequestMeta(req));
+      console.warn("Login failed: invalid password", getSafeRequestMeta(req));
       res.status(401).json({
         success: false,
         message: "Invalid email or password.",
@@ -146,6 +100,9 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     }
 
     const token = generateToken({ userId: user._id.toString(), email: user.email });
+
+    // Set secure HTTP-only cookie
+    res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 
     res.status(200).json({
       success: true,
@@ -160,19 +117,28 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
         },
       },
     });
-    console.info("Login success", { userId: user._id.toString(), ...getRequestMeta(req) });
+    console.info("Login success", { userId: user._id.toString(), ...getSafeRequestMeta(req) });
   } catch (error) {
-    console.error("Login failed unexpectedly", getRequestMeta(req), error);
+    console.error("Login failed unexpectedly", getSafeRequestMeta(req), error);
     next(error);
   }
+};
+
+// POST /api/auth/logout — Public/Protected — Clear auth cookie
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  res.clearCookie(AUTH_COOKIE_NAME, getClearCookieOptions());
+  res.status(200).json({
+    success: true,
+    message: "Logged out successfully.",
+  });
 };
 
 // GET /api/auth/me — Protected — Return current user profile
 export const getMe = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const currentUser = (req as any).user;
+    const currentUser = req.user;
 
-    if (!currentUser) {
+    if (!currentUser?.userId) {
       res.status(401).json({ success: false, message: "Not authenticated." });
       return;
     }
@@ -197,7 +163,7 @@ export const getMe = async (req: Request, res: Response, next: NextFunction): Pr
       },
     });
   } catch (error) {
-    console.error("Get current user failed", { userId: (req as any).user?.userId, ip: req.ip }, error);
+    console.error("Get current user failed", { userId: req.user?.userId, ip: req.ip }, error);
     next(error);
   }
 };

@@ -1,44 +1,87 @@
 import "dotenv/config";
-import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { fileURLToPath } from "node:url";
+import type { Server } from "node:http";
 import app from "./app.ts";
-import connectDB from "./config/database.config.ts";
-import { initializeKnowledgeBase } from "./services/rag.service.ts";
+import { validateEnv } from "./config/env.config.ts";
+import connectDB, { closeDatabaseConnections } from "./config/database.config.ts";
+import { checkKnowledgeBaseStatus, closeVectorMongoClient } from "./services/rag.service.ts";
 
-const PORT = Number(process.env.PORT || 5000);
+// Validate required environment variables at startup
+const env = validateEnv();
+const PORT = Number(env.PORT || 3001);
+
+let httpServer: Server | null = null;
+let isShuttingDown = false;
+
+const gracefulShutdown = async (signal: string): Promise<void> => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n[SHUTDOWN] Received ${signal}. Starting graceful shutdown...`);
+
+  const shutdownTimeout = setTimeout(() => {
+    console.error("[SHUTDOWN] Forced shutdown after timeout (10s).");
+    process.exit(1);
+  }, 10000);
+
+  try {
+    if (httpServer) {
+      await new Promise<void>((resolve, reject) => {
+        httpServer!.close((err) => {
+          if (err) return reject(err);
+          console.log("[SHUTDOWN] HTTP server closed.");
+          resolve();
+        });
+      });
+    }
+
+    await closeDatabaseConnections();
+    await closeVectorMongoClient();
+
+    clearTimeout(shutdownTimeout);
+    console.log("[SHUTDOWN] Graceful shutdown completed cleanly.");
+    process.exit(0);
+  } catch (error) {
+    clearTimeout(shutdownTimeout);
+    console.error("[SHUTDOWN] Error during graceful shutdown:", error);
+    process.exit(1);
+  }
+};
 
 const start = async (): Promise<void> => {
   try {
     // 1. Connect Mongoose (for users collection)
     await connectDB();
 
-    // 2. Start Express as soon as auth data is reachable.
-    //    Login/signup should not be blocked by AI indexing or Gemini issues.
-    const server = app.listen(PORT, () => {
-      const address = server.address() as AddressInfo | null;
+    // 2. Start Express
+    httpServer = app.listen(PORT, () => {
+      const address = httpServer?.address() as AddressInfo | null;
       const activePort = address?.port ?? PORT;
+      console.log(`\n=========================================`);
       console.log(` EduReach Server is running!`);
+      console.log(` Environment: ${env.NODE_ENV}`);
       console.log(` URL: http://localhost:${activePort}`);
       console.log(` Node: ${process.version}`);
-      console.log(` Press Ctrl+C to stop`);
+      console.log(`=========================================\n`);
     });
 
-    server.on("error", (error: NodeJS.ErrnoException) => {
+    httpServer.on("error", (error: NodeJS.ErrnoException) => {
       if (error.code === "EADDRINUSE") {
         console.error(`Port ${PORT} is already in use. Stop the other server or change PORT in .env.`);
         process.exit(1);
       }
-
       console.error("Server failed to start:", error);
       process.exit(1);
     });
 
-    // 3. Warm up the knowledge base in the background.
-    //    If this fails, chat may be unavailable, but auth should keep working.
-    void initializeKnowledgeBase().catch((error) => {
-      console.error("Knowledge base initialization failed:", error);
+    // 3. Verify knowledge base status in background (non-destructive)
+    void checkKnowledgeBaseStatus().catch((error) => {
+      console.warn("[RAG:STATUS] Knowledge base status check encountered an error:", error);
     });
+
+    // 4. Register signal handlers
+    process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
+    process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);
