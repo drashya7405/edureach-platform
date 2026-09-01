@@ -54,7 +54,7 @@ export default function SignupPage() {
         phone: trimmedPhone || undefined,
       });
 
-      login(data.token, data.user);
+      login(data.user);
       toast.success("Account created successfully! Welcome to EduReach.");
       navigate("/");
     } catch (err: unknown) {

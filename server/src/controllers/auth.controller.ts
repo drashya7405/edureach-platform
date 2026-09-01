@@ -38,7 +38,6 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       success: true,
       message: "Account created successfully.",
       data: {
-        token,
         user: {
           id: user._id.toString(),
           name: user.name,
@@ -108,7 +107,6 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       success: true,
       message: "Login successful.",
       data: {
-        token,
         user: {
           id: user._id.toString(),
           name: user.name,

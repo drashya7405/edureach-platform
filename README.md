@@ -34,22 +34,22 @@ The app presents programs, faculty, campus life, events, placement data, and con
 
 ```text
 React client (Vite)
-  ├─ AuthContext + localStorage token
-  ├─ Axios client (/api by default)
+  ├─ AuthContext (session state via HTTP-only cookie)
+  ├─ Axios client with credentials (/api by default)
   └─ POST /auth/* and /chat/message
            │
            ▼
-Express API
+Express API (Port 3001)
   ├─ Mongoose → MongoDB users collection
   ├─ Native MongoDB client → knowledge_docs collection
   └─ LangChain agent → Gemini chat model + retrieval tool
                               │
                               ▼
-                    MongoDB Atlas Vector Search index
+                    MongoDB Atlas Vector Search index (3072D)
                     edureach_vector_index
 ```
 
-On startup, the server connects to MongoDB, starts Express, then initializes the knowledge base in the background. Authentication remains available even if AI indexing fails. The client stores the JWT in `localStorage`; Axios automatically attaches it as a `Bearer` token to API requests.
+On startup, the server connects to MongoDB, starts Express, and runs a read-only knowledge-base probe. It never destructively drops or rebuilds knowledge embeddings on startup. Authentication uses secure HTTP-only cookies, with credentials automatically sent by Axios.
 
 ## Technology stack
 
@@ -159,15 +159,14 @@ edureach-platform/
 
 ### Authentication behavior
 
-`AuthContext` reads `localStorage.token` when the client loads and calls `GET /api/auth/me`. Invalid/expired sessions are cleared. On login or registration, the returned JWT is saved and the profile is fetched; logout removes the token and user state. The Axios instance uses `VITE_API_URL` when set, otherwise `/api`, and adds `Authorization: Bearer <token>` automatically.
+`AuthContext` verifies active sessions via HTTP-only cookies by calling `GET /api/auth/me` on initial load. JWT tokens are never stored in client `localStorage`. On registration or login, the server issues a secure, HTTP-only cookie and returns the authenticated user profile. Logging out calls `POST /api/auth/logout`, clearing the cookie on the server and resetting client user state. The Axios instance is configured with `withCredentials: true` to automatically include cookies on all API requests.
 
 ## Backend and API
 
 ### Server behavior
 
-- `server.ts` loads `server/.env`, connects to MongoDB, listens on `PORT` (default `5000`), and warms the RAG knowledge base asynchronously.
-- `app.ts` enables CORS for `CLIENT_URL` (default `http://localhost:5173`), accepts JSON and URL-encoded payloads up to 10 MB, mounts routes, supplies JSON 404 responses, and uses a final error handler.
-- The error handler logs request method, URL, message, and stack, then returns a JSON `500` response.
+- `server.ts` validates environment variables, connects to MongoDB, starts Express on `PORT` (default `3001`), and runs a read-only knowledge-base probe in the background. It never rebuilds or deletes knowledge base documents during startup.
+- `app.ts` enforces production-safe CORS restricted to origins defined in `CLIENT_URL` or `FRONTEND_URL` (with localhost permitted during development), sets 1MB body limits, mounts routes, provides JSON 404 handlers, and applies a centralized error handler that sanitizes error messages and stack traces in production.
 
 ### API reference
 
@@ -177,9 +176,11 @@ All responses use a `success` flag; successful payloads are returned under `data
 | --- | --- | --- | --- | --- |
 | `GET /api/health` | No | — | Server/database state, JWT and Gemini configuration flags, timestamp | Returns `200` when MongoDB is connected; otherwise `503` |
 | `POST /api/auth/register` | No | `name`, `email`, `password`, optional `phone` | JWT and user object | Requires name/email/password; password must be at least 6 characters; duplicate email returns `409` |
-| `POST /api/auth/login` | No | `email`, `password` | JWT and user object | Incorrect credentials return `401` |
-| `GET /api/auth/me` | Bearer JWT | — | Current user excluding password | Missing, invalid, or expired token returns `401` |
-| `POST /api/chat/message` | No API middleware | `message` | `{ message: string }` | UI access is gated in the client; server endpoint itself is currently public |
+| `POST /api/auth/register` | No | `name`, `email`, `password`, `phone` (optional) | Sets HTTP-only cookie, returns user object | Validates email, password >= 6 chars; rejects duplicates with `409` |
+| `POST /api/auth/login` | No | `email`, `password` | Sets HTTP-only cookie, returns user object | Incorrect credentials return `401` |
+| `POST /api/auth/logout` | No | — | Clears HTTP-only cookie | Returns 200 on logout |
+| `GET /api/auth/me` | HTTP-only cookie / Bearer JWT | — | Current user excluding password | Missing, invalid, or expired token returns `401` |
+| `POST /api/chat/message` | Yes (authMiddleware + rateLimiter) | `message` (1-1000 chars) | `{ message: string }` | Gated on auth and input validation; returns AI counselor response |
 
 ### User model
 
@@ -201,23 +202,23 @@ The counselor is a retrieval-augmented generation (RAG) subsystem implemented in
 
 ### Architecture & Resource Lifecycle
 1. **Singleton Resource Management**: `MongoClient`, `GoogleGenerativeAIEmbeddings`, `MongoDBAtlasVectorSearch`, and `ChatGoogleGenerativeAI` are initialized once as long-lived singletons, avoiding connection leaks and per-request object creation overhead.
-2. **Non-Destructive Server Startup**: During normal server startup or container restarts, the server only checks if knowledge documents exist. It **never** destructively deletes or rebuilds embeddings on startup.
-3. **Safe Atomic Indexing**: Knowledge base indexing is executed explicitly via `npm run index:knowledge`. It verifies chunk embeddings (768D) and stage documents before replacing the live collection.
+2. **Non-Destructive Server Startup**: During normal server startup or container restarts, the server only performs a read-only status check. It **never** destructively deletes or rebuilds embeddings on startup.
+3. **Safe Manual Indexing**: Knowledge base indexing is executed explicitly via `npm run index:knowledge`. It verifies chunk embeddings (3072D) and stages documents before updating the live collection.
 4. **LangChain Retrieval**: The conversational agent invokes the `retrieve` tool, which queries the `edureach_vector_index` Atlas Vector Search index for the top-3 most relevant chunks.
 5. **Resilient Fallback**: If Atlas Vector Search encounters an index error, the system safely falls back to direct knowledge context retrieval and LLM answering without crashing or leaking credentials.
 
-Default models are `gemini-1.5-flash` for chat and `text-embedding-004` (768 dimensions) for embeddings, configurable via `GEMINI_CHAT_MODEL` and `GEMINI_EMBEDDING_MODEL`.
+Default models are `gemini-2.5-flash` for chat and `gemini-embedding-001` (3072 dimensions) for embeddings, matching the existing MongoDB Atlas Vector Search index. These can be configured via `GEMINI_CHAT_MODEL` and `GEMINI_EMBEDDING_MODEL`.
 
 ### Knowledge Base Commands
 
 | Command | Purpose | When to run |
 | :--- | :--- | :--- |
-| `npm run index:knowledge` | Splits document, generates 768D embeddings, verifies dimensions, and safely populates `knowledge_docs` | Initial setup, or when `edureach-knowledge.txt` content is updated |
+| `npm run index:knowledge` | Splits document, generates 3072D embeddings, verifies dimensions, and safely populates `knowledge_docs` | Initial setup, or when `edureach-knowledge.txt` content is updated |
 | `npm run verify:knowledge` | Verifies file readability, embedding generation, MongoDB connection, and document schema | Health checks and post-deployment validation |
 
 ### Required MongoDB Atlas Vector Search Index
 
-Create a Vector Search index named **`edureach_vector_index`** on database **`edureach_db`**, collection **`knowledge_docs`** with the following JSON definition:
+Create or preserve the Vector Search index named **`edureach_vector_index`** on database **`edureach_db`**, collection **`knowledge_docs`** with the following JSON definition:
 
 ```json
 {
@@ -225,7 +226,7 @@ Create a Vector Search index named **`edureach_vector_index`** on database **`ed
     {
       "type": "vector",
       "path": "embedding",
-      "numDimensions": 768,
+      "numDimensions": 3072,
       "similarity": "cosine"
     }
   ]
@@ -239,7 +240,9 @@ Two logical collections are used in `edureach_db`:
 | Collection | Writer/reader | Contents |
 | --- | --- | --- |
 | `users` | Mongoose authentication flow | Registered user records and password hashes |
-| `knowledge_docs` | Native MongoDB client and LangChain | Chunk text, numeric embeddings (768D), metadata, and timestamps |
+| `knowledge_docs` | Native MongoDB client and LangChain | Chunk text, numeric embeddings (3072D), metadata, and timestamps |
+
+`knowledge-doc.model.ts` describes `text`, `embedding`, and flexible `metadata` with timestamps, though RAG vector operations use the native MongoDB collection directly.
 
 `knowledge-doc.model.ts` describes `text`, `embedding`, and flexible `metadata` with timestamps, though RAG vector operations use the native MongoDB collection directly.
 
@@ -259,8 +262,8 @@ JWT_EXPIRES_IN=7d
 
 # Google Gemini / RAG
 GOOGLE_API_KEY=your-google-ai-studio-api-key
-GEMINI_CHAT_MODEL=gemini-1.5-flash
-GEMINI_EMBEDDING_MODEL=text-embedding-004
+GEMINI_CHAT_MODEL=gemini-2.5-flash
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 ```
 
 Create `client/.env` only when the API is not accessed through the Vite proxy:

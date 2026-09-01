@@ -12,9 +12,9 @@ export const RAG_CONFIG = {
   embeddingField: "embedding",
   textField: "text",
   metadataField: "metadata",
-  embeddingDimensions: 768, // Google text-embedding-004 dimension
-  defaultChatModel: "gemini-1.5-flash",
-  defaultEmbeddingModel: "text-embedding-004",
+  embeddingDimensions: 3072, // Google gemini-embedding-001 dimension (matching existing Atlas vectors)
+  defaultChatModel: "gemini-2.5-flash",
+  defaultEmbeddingModel: "gemini-embedding-001",
   chunkSize: 1000,
   chunkOverlap: 200,
   knowledgeFileCandidates: [

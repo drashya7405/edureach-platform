@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { RAG_CONFIG } from "./rag.config.ts";
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(3001),
@@ -15,8 +16,8 @@ const envSchema = z.object({
   GOOGLE_API_KEY: z
     .string({ required_error: "GOOGLE_API_KEY is required" })
     .min(1, "GOOGLE_API_KEY cannot be empty"),
-  GEMINI_CHAT_MODEL: z.string().default("gemini-1.5-flash"),
-  GEMINI_EMBEDDING_MODEL: z.string().default("text-embedding-004"),
+  GEMINI_CHAT_MODEL: z.string().default(RAG_CONFIG.defaultChatModel),
+  GEMINI_EMBEDDING_MODEL: z.string().default(RAG_CONFIG.defaultEmbeddingModel),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

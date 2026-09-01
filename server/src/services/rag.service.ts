@@ -98,10 +98,10 @@ export const getChatModel = (): ChatGoogleGenerativeAI => {
   return chatModelInstance;
 };
 
-// ---- Helper to read knowledge base text ----
+// ---- Helper to read knowledge base text from file ----
 let cachedKnowledgeText: string | null = null;
 
-export const loadKnowledgeBaseText = async (): Promise<string> => {
+export const loadKnowledgeBaseText = async (): Promise<string | null> => {
   if (cachedKnowledgeText) {
     return cachedKnowledgeText;
   }
@@ -118,14 +118,7 @@ export const loadKnowledgeBaseText = async (): Promise<string> => {
     }
   }
 
-  // Built-in fallback summary if file is missing
-  return `EduReach College is a premier engineering institution located in Hyderabad, Telangana, India.
-Affiliated with JNTU Hyderabad and approved by AICTE.
-Programs: B.Tech in CSE, ECE, AI & DS, IT, ME, CE. M.Tech in CS, VLSI, Structural Eng. MBA in Finance, Marketing, HR, IT.
-Fees: B.Tech Tuition Rs 1,50,000/yr, Day scholar Rs 1,70,000/yr, Hosteller Rs 2,50,000/yr.
-Placements: 92% overall placement rate, Highest package 42 LPA by Google, 150+ recruiting companies.
-Admissions: TS/AP EAMCET (70%) and Management Quota (30%). Application opens March 1st.
-Contact: admissions@edureach.edu.in, phone +91 9876543210.`;
+  return null;
 };
 
 // ============================================
@@ -175,7 +168,10 @@ const createRetrieveTool = (vectorStore: MongoDBAtlasVectorSearch) => {
 
       // Fallback context from knowledge text
       const knowledge = await loadKnowledgeBaseText();
-      return `Context from EduReach Knowledge Base:\n${knowledge.slice(0, 3000)}`;
+      if (knowledge) {
+        return `Context from EduReach Knowledge Base:\n${knowledge.slice(0, 3000)}`;
+      }
+      return "Information not found in knowledge base.";
     },
     {
       name: "retrieve",
@@ -245,12 +241,13 @@ export const getRAGResponse = async (question: string): Promise<string> => {
   } catch (error: any) {
     console.error("[RAG:LLM_GENERATION_ERROR] Primary agent pipeline error:", error?.message || error);
 
-    // Direct LLM fallback with static knowledge base if agent loop encountered an issue
+    // Direct LLM fallback with knowledge base file if agent loop encountered an issue
     try {
       const knowledge = await loadKnowledgeBaseText();
-      const model = getChatModel();
+      if (knowledge) {
+        const model = getChatModel();
 
-      const prompt = `You are EduReach Bot, the admissions counselor for EduReach College, Hyderabad.
+        const prompt = `You are EduReach Bot, the admissions counselor for EduReach College, Hyderabad.
 Answer the following student question accurately using the provided EduReach College knowledge base.
 Be concise, polite, and helpful.
 
@@ -262,9 +259,10 @@ ${question}
 
 Answer:`;
 
-      const response = await model.invoke(prompt);
-      if (typeof response.content === "string" && response.content.trim()) {
-        return response.content;
+        const response = await model.invoke(prompt);
+        if (typeof response.content === "string" && response.content.trim()) {
+          return response.content;
+        }
       }
     } catch (fallbackError: any) {
       console.error("[RAG:DIRECT_FALLBACK_ERROR] Direct LLM prompt fallback failed:", fallbackError?.message || fallbackError);

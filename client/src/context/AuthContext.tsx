@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { getMe, logoutUser } from "../services/auth.service";
 
-interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
@@ -11,8 +11,8 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (token: string, userData?: User) => void;
-  logout: () => void;
+  login: (userData?: User) => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,37 +22,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Attempt to verify session via HTTP-only cookie or local token
+    // Verify active session via HTTP-only cookie
     getMe()
       .then((data) => {
         setUser(data.user);
       })
       .catch(() => {
-        localStorage.removeItem("token");
         setUser(null);
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const login = (token: string, userData?: User) => {
-    localStorage.setItem("token", token);
+  const login = (userData?: User) => {
     if (userData) {
       setUser(userData);
     }
+    // Verify fresh user record from /auth/me
     getMe()
       .then((data) => setUser(data.user))
       .catch(() => {
         if (!userData) {
-          localStorage.removeItem("token");
           setUser(null);
         }
       });
   };
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    setUser(null);
-    void logoutUser();
+  const logout = async () => {
+    try {
+      await logoutUser();
+    } finally {
+      setUser(null);
+    }
   };
 
   return (

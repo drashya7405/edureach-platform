@@ -2,23 +2,26 @@ import type { CookieOptions } from "express";
 
 export const AUTH_COOKIE_NAME = "token";
 
-export const getAuthCookieOptions = (): CookieOptions => {
+const getBaseCookieOptions = (): CookieOptions => {
   const isProd = process.env.NODE_ENV === "production";
+  const sameSiteEnv = (process.env.COOKIE_SAME_SITE?.toLowerCase() || "lax") as "lax" | "strict" | "none";
+  const sameSite = ["lax", "strict", "none"].includes(sameSiteEnv) ? sameSiteEnv : "lax";
+
   return {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+    secure: isProd || sameSite === "none",
+    sameSite,
     path: "/",
   };
 };
 
-export const getClearCookieOptions = (): CookieOptions => {
-  const isProd = process.env.NODE_ENV === "production";
+export const getAuthCookieOptions = (): CookieOptions => {
   return {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
-    path: "/",
+    ...getBaseCookieOptions(),
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
   };
+};
+
+export const getClearCookieOptions = (): CookieOptions => {
+  return getBaseCookieOptions();
 };

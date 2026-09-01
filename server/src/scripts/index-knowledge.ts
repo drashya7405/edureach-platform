@@ -132,7 +132,7 @@ async function runSafeIndexing() {
   const liveCollection = db.collection(RAG_CONFIG.collectionName);
 
   try {
-    // 7. Write to staging collection first (safe atomic replacement)
+    // 7. Write to staging collection first (staged verification before live replacement)
     console.log(`\n[7/8] Writing to staging collection '${RAG_CONFIG.stagingCollectionName}'...`);
     await stagingCollection.deleteMany({});
     const insertResult = await stagingCollection.insertMany(docsWithEmbeddings);

@@ -16,26 +16,29 @@ const app: Application = express();
 // Trust proxy headers if running behind reverse proxy / load balancer
 app.set("trust proxy", 1);
 
-// CORS configuration
+// CORS configuration — production-safe origin control
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. server-to-server, curl, health probes)
       if (!origin) return callback(null, true);
 
-      const clientEnv = process.env.CLIENT_URL || "";
+      const clientEnv = process.env.CLIENT_URL || process.env.FRONTEND_URL || "";
       const allowedList = clientEnv
         .split(",")
         .map((s) => s.trim().replace(/\/+$/, ""))
         .filter(Boolean);
 
-      const isAllowed =
-        allowedList.includes(origin) ||
+      const isDev = process.env.NODE_ENV !== "production";
+      const isLocalhost =
         origin.startsWith("http://localhost:") ||
-        origin.startsWith("http://127.0.0.1:") ||
-        origin.endsWith(".vercel.app");
+        origin.startsWith("http://127.0.0.1:");
 
-      if (isAllowed || (process.env.NODE_ENV !== "production" && allowedList.length === 0)) {
+      if (allowedList.includes(origin)) {
+        return callback(null, true);
+      }
+
+      if (isDev && (isLocalhost || allowedList.length === 0)) {
         return callback(null, true);
       }
 

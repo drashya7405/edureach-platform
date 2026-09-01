@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { getDatabaseHealth } from "../config/database.config.ts";
+import { RAG_CONFIG } from "../config/rag.config.ts";
 
 const router = Router();
 
@@ -45,8 +46,8 @@ router.get("/", (_req: Request, res: Response) => {
       },
       ai: {
         googleApiConfigured: Boolean(process.env.GOOGLE_API_KEY),
-        chatModel: process.env.GEMINI_CHAT_MODEL || "gemini-1.5-flash",
-        embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004",
+        chatModel: process.env.GEMINI_CHAT_MODEL || RAG_CONFIG.defaultChatModel,
+        embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || RAG_CONFIG.defaultEmbeddingModel,
       },
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
