@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@theme {
+:root {
   --color-maroon: #7B1E2B;
   --color-maroon-light: #9B3344;
   --color-maroon-dark: #5A1520;
@@ -10,13 +10,50 @@
   --font-body: "Source Sans 3", system-ui, sans-serif;
 }
 
-:root {
-  --color-maroon: #7B1E2B;
-  --color-maroon-light: #9B3344;
-  --color-maroon-dark: #5A1520;
-  --color-cream: #faf7f5;
-  --font-heading: "Playfair Display", Georgia, serif;
-  --font-body: "Source Sans 3", system-ui, sans-serif;
+.bg-maroon {
+  background-color: #7B1E2B;
+}
+
+.bg-maroon-dark {
+  background-color: #5A1520;
+}
+
+.bg-maroon-light {
+  background-color: #9B3344;
+}
+
+.bg-cream {
+  background-color: #faf7f5;
+}
+
+.text-maroon {
+  color: #7B1E2B;
+}
+
+.text-maroon-dark {
+  color: #5A1520;
+}
+
+.border-maroon {
+  border-color: #7B1E2B;
+}
+
+.btn-primary {
+  background-color: #7B1E2B;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(123, 30, 43, 0.35);
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #5A1520;
+  box-shadow: 0 6px 20px rgba(123, 30, 43, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 html {
@@ -24,65 +61,12 @@ html {
 }
 
 body {
-  font-family: "Source Sans 3", system-ui, sans-serif;
+  font-family: "Source Sans 3", sans-serif;
   color: #1a1a1a;
-  background-color: #faf7f5;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: "Playfair Display", Georgia, serif;
-}
-
-/* Explicit Utility Classes to ensure 100% brand consistency */
-.bg-maroon {
-  background-color: #7B1E2B !important;
-}
-.bg-maroon-dark {
-  background-color: #5A1520 !important;
-}
-.bg-maroon-light {
-  background-color: #9B3344 !important;
-}
-.text-maroon {
-  color: #7B1E2B !important;
-}
-.text-maroon-dark {
-  color: #5A1520 !important;
-}
-.text-maroon-light {
-  color: #9B3344 !important;
-}
-.border-maroon {
-  border-color: #7B1E2B !important;
-}
-.bg-cream {
-  background-color: #faf7f5 !important;
-}
-
-/* High-Contrast Primary Brand Button */
-.btn-primary {
-  background-color: #7B1E2B !important;
-  color: #ffffff !important;
-  font-weight: 700 !important;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 14px 0 rgba(123, 30, 43, 0.35);
-  transition: all 0.2s ease-in-out;
-}
-.btn-primary:hover {
-  background-color: #5A1520 !important;
-  color: #ffffff !important;
-  box-shadow: 0 6px 20px 0 rgba(123, 30, 43, 0.45);
-  transform: translateY(-1px);
-}
-.btn-primary:active {
-  transform: translateY(0);
-}
-.btn-primary:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  transform: none;
+  font-family: "Playfair Display", serif;
 }
 
 ::-webkit-scrollbar {

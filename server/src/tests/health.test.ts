@@ -27,6 +27,7 @@ describe("Health API Endpoints", () => {
     assert.equal(res.body.data.server, "up");
     assert.equal(typeof res.body.data.auth.jwtConfigured, "boolean");
     assert.equal(typeof res.body.data.ai.googleApiConfigured, "boolean");
+    // Ensure no secrets are present in response
     assert.equal(res.body.data.jwtSecret, undefined);
     assert.equal(res.body.data.googleApiKey, undefined);
     assert.equal(res.body.data.mongoUri, undefined);

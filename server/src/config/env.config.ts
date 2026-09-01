@@ -1,34 +1,48 @@
-export interface EnvConfig {
-  PORT: number;
-  NODE_ENV: string;
-  MONGODB_URI: string;
-  JWT_SECRET: string;
-  CLIENT_URL: string;
-  GOOGLE_API_KEY: string;
-  GEMINI_MODEL: string;
-  GEMINI_EMBEDDING_MODEL: string;
-}
+import "dotenv/config";
+import { z } from "zod";
+import { RAG_CONFIG } from "./rag.config.ts";
+
+const envSchema = z.object({
+  PORT: z.coerce.number().default(3001),
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  CLIENT_URL: z.string().default("http://localhost:5173"),
+  MONGODB_URI: z
+    .string({ required_error: "MONGODB_URI is required" })
+    .min(1, "MONGODB_URI cannot be empty"),
+  JWT_SECRET: z
+    .string({ required_error: "JWT_SECRET is required" })
+    .min(8, "JWT_SECRET must be at least 8 characters"),
+  JWT_EXPIRES_IN: z.string().default("7d"),
+  GOOGLE_API_KEY: z
+    .string({ required_error: "GOOGLE_API_KEY is required" })
+    .min(1, "GOOGLE_API_KEY cannot be empty"),
+  GEMINI_CHAT_MODEL: z.string().default(RAG_CONFIG.defaultChatModel),
+  GEMINI_EMBEDDING_MODEL: z.string().default(RAG_CONFIG.defaultEmbeddingModel),
+});
+
+export type EnvConfig = z.infer<typeof envSchema>;
+
+let validatedEnv: EnvConfig | null = null;
 
 export const validateEnv = (): EnvConfig => {
-  const missing: string[] = [];
-  if (!process.env.MONGODB_URI) missing.push("MONGODB_URI");
-  if (!process.env.JWT_SECRET) missing.push("JWT_SECRET");
-  if (!process.env.GOOGLE_API_KEY) missing.push("GOOGLE_API_KEY");
-
-  if (missing.length > 0 && process.env.NODE_ENV !== "test") {
-    console.error(`[CONFIG ERROR] Missing required environment variables: ${missing.join(", ")}`);
+  if (validatedEnv) {
+    return validatedEnv;
   }
 
-  return {
-    PORT: Number(process.env.PORT) || 5000,
-    NODE_ENV: process.env.NODE_ENV || "development",
-    MONGODB_URI: process.env.MONGODB_URI || "mongodb://localhost:27017/edureach_test",
-    JWT_SECRET: process.env.JWT_SECRET || "default-jwt-secret-for-development-only-12345",
-    CLIENT_URL: process.env.CLIENT_URL || "http://localhost:5173",
-    GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || "",
-    GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-    GEMINI_EMBEDDING_MODEL: process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004",
-  };
+  const result = envSchema.safeParse(process.env);
+  if (!result.success) {
+    const errorDetails = result.error.issues
+      .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
+      .join("\n");
+    console.error(`\x1b[31m[CONFIG ERROR] Invalid environment configuration:\n${errorDetails}\x1b[0m`);
+
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(`Environment validation failed. Please check server environment variables.`);
+    }
+  }
+
+  validatedEnv = result.success ? result.data : (process.env as unknown as EnvConfig);
+  return validatedEnv;
 };
 
 export const env = validateEnv();

@@ -47,20 +47,20 @@ export default function HomePage() {
           <Footer />
         </>
       ) : (
-        <section id="unlock" className="pt-16 pb-0 bg-cream text-center">
-          <div className="max-w-2xl mx-auto px-4 mb-16">
-            <h2 className="font-heading text-3xl sm:text-4xl font-bold text-gray-900 mb-4">Want to See More?</h2>
-            <p className="text-gray-600 text-base mb-8 leading-relaxed">
-              Sign up to explore our campus life, events, department placement statistics, and get instant guidance from our AI counselor.
-            </p>
-            <button
-              onClick={() => setShowSignupPopup(true)}
-              className="btn-primary inline-flex items-center gap-2 px-8 py-3.5 rounded-xl font-bold text-white text-base shadow-lg cursor-pointer"
-            >
-              Sign Up to Unlock
-            </button>
+        <section id="unlock" className="py-16 bg-cream text-center px-4">
+          <h2 className="font-heading text-3xl font-bold text-gray-900 mb-3">Want to See More?</h2>
+          <p className="text-gray-600 max-w-xl mx-auto mb-6 text-base">
+            Sign up to explore campus life, events, placement statistics, and talk to our AI counselor.
+          </p>
+          <button
+            onClick={() => setShowSignupPopup(true)}
+            className="btn-primary bg-maroon text-white px-8 py-3 rounded-xl font-semibold text-base shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+          >
+            Sign Up to Unlock
+          </button>
+          <div className="mt-16">
+            <Footer />
           </div>
-          <Footer />
         </section>
       )}
 

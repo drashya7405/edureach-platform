@@ -16,23 +16,36 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!email.trim() || !password) {
-      toast.error("Please fill in all fields.");
+    if (loading) return;
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      toast.error("Please fill in both email and password.");
       return;
     }
 
     setLoading(true);
     try {
-      const data = await loginUser({ email: email.trim(), password });
-      login(data.token, data.user);
+      const data = await loginUser({ email: trimmedEmail, password });
+      login(data.user);
       toast.success("Welcome back!");
       navigate("/");
     } catch (err: unknown) {
-      let message = "Invalid email or password. Please try again.";
-      if (axios.isAxiosError(err) && err.response?.data?.message) {
-        message = err.response.data.message;
+      if (axios.isAxiosError(err)) {
+        if (err.response?.data?.message) {
+          toast.error(err.response.data.message);
+        } else if (err.response?.status === 401) {
+          toast.error("Invalid email or password.");
+        } else if (err.code === "ERR_NETWORK" || err.message === "Network Error") {
+          toast.error("Unable to reach the server. Please check your connection.");
+        } else {
+          toast.error(err.message || "Login failed. Please check your credentials.");
+        }
+      } else if (err instanceof Error) {
+        toast.error(err.message);
+      } else {
+        toast.error("Login failed. Please check your credentials.");
       }
-      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -40,49 +53,45 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex bg-cream">
+      {/* Decorative side banner */}
       <div className="hidden lg:block lg:w-1/2 relative">
-        <img src={images.students} alt="EduReach Campus" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-maroon-dark/95 via-maroon/75 to-maroon/50 flex items-center justify-center p-12">
-          <div className="text-center text-white max-w-lg">
-            <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-6 backdrop-blur-sm border border-white/20">
-              <GraduationCap className="w-9 h-9 text-amber-300" />
+        <img src={images.students} alt="Students" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-maroon/65 flex items-center justify-center backdrop-blur-[1px]">
+          <div className="text-center text-white p-12 max-w-lg">
+            <div className="w-20 h-20 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-6 backdrop-blur-md ring-1 ring-white/30 shadow-xl">
+              <GraduationCap className="w-10 h-10 text-white" />
             </div>
-            <h2 className="font-heading text-4xl font-bold mb-3 text-white">EduReach College</h2>
-            <p className="text-white/90 text-base leading-relaxed mb-6">
-              Your gateway to premier engineering, top corporate placements, and 24/7 AI-powered academic guidance.
+            <h2 className="font-heading text-4xl font-bold mb-3 leading-tight">EduReach</h2>
+            <p className="text-white/90 text-lg font-light leading-relaxed">
+              Your Gateway to Premier Engineering and Technology Education
             </p>
-            <div className="inline-flex items-center gap-6 px-6 py-3 rounded-xl bg-white/10 border border-white/15 backdrop-blur-sm text-xs font-semibold uppercase tracking-wider text-amber-200">
-              <span>NAAC Accredited</span>
-              <span>•</span>
-              <span>AICTE Approved</span>
-              <span>•</span>
-              <span>JNTU Affiliated</span>
-            </div>
           </div>
         </div>
       </div>
 
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 overflow-y-auto">
-        <div className="w-full max-w-md my-auto">
+      {/* Form column */}
+      <div className="w-full lg:w-1/2 flex flex-col justify-center overflow-y-auto px-6 py-8 sm:px-12 lg:px-16 bg-cream">
+        <div className="w-full max-w-md mx-auto my-auto">
           <Link
             to="/"
-            className="inline-flex items-center gap-1.5 text-gray-600 hover:text-maroon font-semibold transition-colors duration-200 mb-6 group"
+            className="inline-flex items-center gap-1.5 text-gray-500 hover:text-maroon transition-colors duration-200 mb-6 text-sm group font-medium"
           >
-            <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-            <span className="text-sm">Back to Home</span>
+            <ArrowLeft className="w-4 h-4 transition-transform duration-200 group-hover:-translate-x-1" />
+            <span>Back to Home</span>
           </Link>
 
-          <div className="flex items-center gap-2 mb-2">
-            <GraduationCap className="w-7 h-7 text-maroon" />
-            <span className="font-heading text-xl font-bold text-maroon">EduReach College</span>
-          </div>
+          <h1 className="font-heading text-3xl sm:text-4xl font-bold text-gray-900 mb-2 tracking-tight">
+            Welcome Back
+          </h1>
+          <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+            Sign in to access your EduReach account, AI counseling, and program details.
+          </p>
 
-          <h1 className="font-heading text-3xl sm:text-4xl font-bold text-gray-900 mb-2">Welcome Back</h1>
-          <p className="text-gray-600 text-sm mb-8">Sign in to access your admissions dashboard and AI counseling</p>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -91,13 +100,16 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-maroon focus:ring-2 focus:ring-maroon/20 text-gray-900 transition-colors shadow-sm text-sm"
+                  disabled={loading}
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:border-maroon focus:ring-1 focus:ring-maroon bg-white text-sm transition-colors duration-200 disabled:bg-gray-100 disabled:opacity-75"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Password
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -106,30 +118,33 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-maroon focus:ring-2 focus:ring-maroon/20 text-gray-900 transition-colors shadow-sm text-sm"
+                  disabled={loading}
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:border-maroon focus:ring-1 focus:ring-maroon bg-white text-sm transition-colors duration-200 disabled:bg-gray-100 disabled:opacity-75"
                 />
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full py-3.5 px-4 rounded-xl text-white font-bold text-base shadow-md cursor-pointer transition-all"
-            >
-              {loading ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Signing In...
-                </span>
-              ) : (
-                "Sign In"
-              )}
-            </button>
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full btn-primary bg-maroon text-white py-3.5 px-4 rounded-xl font-semibold text-base hover:bg-maroon-dark focus:outline-none focus:ring-2 focus:ring-maroon focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 shadow-[0_4px_14px_rgba(123,30,43,0.35)] hover:shadow-[0_6px_20px_rgba(123,30,43,0.45)] active:scale-[0.99] cursor-pointer flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin text-white" />
+                    <span>Signing in...</span>
+                  </>
+                ) : (
+                  <span>Sign In</span>
+                )}
+              </button>
+            </div>
           </form>
 
-          <p className="text-center text-sm text-gray-600 mt-6 font-medium">
+          <p className="text-center text-sm text-gray-600 mt-6">
             Don't have an account?{" "}
-            <Link to="/signup" className="text-maroon font-bold hover:underline hover:text-maroon-dark transition-colors">
+            <Link to="/signup" className="text-maroon font-bold hover:text-maroon-dark hover:underline transition-colors duration-200">
               Sign Up
             </Link>
           </p>

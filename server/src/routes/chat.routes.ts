@@ -7,6 +7,13 @@ import { chatLimiter } from "../middleware/rate-limiter.middleware.ts";
 
 const router = Router();
 
-router.post("/message", authMiddleware, chatLimiter, validateBody(chatMessageSchema), sendMessage);
+// POST /api/chat/message — Protected: Requires authenticated user
+router.post(
+  "/message",
+  authMiddleware,
+  chatLimiter,
+  validateBody(chatMessageSchema),
+  sendMessage,
+);
 
 export default router;

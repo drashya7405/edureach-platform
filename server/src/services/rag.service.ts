@@ -1,160 +1,177 @@
-import path from "node:path";
+import "dotenv/config";
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { MongoClient } from "mongodb";
 import { createAgent, tool } from "langchain";
-import { Document } from "@langchain/core/documents";
 import {
   ChatGoogleGenerativeAI,
   GoogleGenerativeAIEmbeddings,
 } from "@langchain/google-genai";
 import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { RAG_CONFIG } from "../config/rag.config.ts";
 
-// --- MongoDB Native Client (for LangChain vector operations) ---
-// ---- __dirname for ESM ----
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// ---- MongoDB native client ----
+// ============================================
+// Resource Singletons (Cached for performance)
+// ============================================
 let mongoClient: MongoClient | null = null;
+let embeddingsInstance: GoogleGenerativeAIEmbeddings | null = null;
+let vectorStoreInstance: MongoDBAtlasVectorSearch | null = null;
+let chatModelInstance: ChatGoogleGenerativeAI | null = null;
+let agentInstance: any = null;
 
-const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
-const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001";
+export const getChatModelName = (): string => {
+  return process.env.GEMINI_CHAT_MODEL || RAG_CONFIG.defaultChatModel;
+};
 
-const getMongoClient = async (): Promise<MongoClient> => {
+export const getEmbeddingModelName = (): string => {
+  return process.env.GEMINI_EMBEDDING_MODEL || RAG_CONFIG.defaultEmbeddingModel;
+};
+
+// ---- MongoDB Native Client Singleton ----
+export const getMongoClient = async (): Promise<MongoClient> => {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("[RAG:CONFIG_ERROR] MONGODB_URI is not defined in environment variables");
+  }
+
   if (!mongoClient) {
-    mongoClient = new MongoClient(process.env.MONGODB_URI || "");
-    await mongoClient.connect();
+    try {
+      mongoClient = new MongoClient(uri, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 10000,
+      });
+      await mongoClient.connect();
+    } catch (err: any) {
+      mongoClient = null;
+      console.error("[RAG:MONGO_CONNECTION_ERROR] Failed to connect native MongoDB client:", err?.message || err);
+      throw err;
+    }
   }
   return mongoClient;
 };
 
-// ---- Google GenAI Embeddings ----
-// gemini-embedding-001 → default 3072 dimensions (FREE, same API key as Gemini chat)
-const getEmbeddings = () => {
-  if (!process.env.GOOGLE_API_KEY) {
-    throw new Error("GOOGLE_API_KEY is not set in .env!");
+// ---- Google GenAI Embeddings Singleton ----
+export const getEmbeddings = (): GoogleGenerativeAIEmbeddings => {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("[RAG:CONFIG_ERROR] GOOGLE_API_KEY is not set in environment variables");
   }
-  return new GoogleGenerativeAIEmbeddings({
-    apiKey: process.env.GOOGLE_API_KEY,
-    modelName: EMBEDDING_MODEL,
-  });
+
+  if (!embeddingsInstance) {
+    embeddingsInstance = new GoogleGenerativeAIEmbeddings({
+      apiKey,
+      modelName: getEmbeddingModelName(),
+    });
+  }
+  return embeddingsInstance;
 };
 
-// ---- Vector Store ----
-const getVectorStore = async () => {
-  const client = await getMongoClient();
-  const collection = client.db("edureach_db").collection("knowledge_docs");
+// ---- Vector Store Singleton ----
+export const getVectorStore = async (): Promise<MongoDBAtlasVectorSearch> => {
+  if (!vectorStoreInstance) {
+    const client = await getMongoClient();
+    const collection = client.db(RAG_CONFIG.databaseName).collection(RAG_CONFIG.collectionName);
 
-  return new MongoDBAtlasVectorSearch(getEmbeddings(), {
-    collection: collection as any,
-    indexName: "edureach_vector_index",
-    textKey: "text",
-    embeddingKey: "embedding",
-  });
+    vectorStoreInstance = new MongoDBAtlasVectorSearch(getEmbeddings(), {
+      collection: collection as any,
+      indexName: RAG_CONFIG.vectorIndexName,
+      textKey: RAG_CONFIG.textField,
+      embeddingKey: RAG_CONFIG.embeddingField,
+    });
+  }
+  return vectorStoreInstance;
 };
 
-// --- Initialize Knowledge Base ---
-// / ============================================
-// A) INDEXING — runs ONCE at server startup
+// ---- Chat Model Singleton ----
+export const getChatModel = (): ChatGoogleGenerativeAI => {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("[RAG:CONFIG_ERROR] GOOGLE_API_KEY is not set in environment variables");
+  }
+
+  if (!chatModelInstance) {
+    chatModelInstance = new ChatGoogleGenerativeAI({
+      model: getChatModelName(),
+      temperature: 0.7,
+      apiKey,
+    });
+  }
+  return chatModelInstance;
+};
+
+// ---- Helper to read knowledge base text from file ----
+let cachedKnowledgeText: string | null = null;
+
+export const loadKnowledgeBaseText = async (): Promise<string | null> => {
+  if (cachedKnowledgeText) {
+    return cachedKnowledgeText;
+  }
+
+  for (const candidate of RAG_CONFIG.knowledgeFileCandidates) {
+    try {
+      const content = await readFile(candidate, "utf8");
+      if (content && content.trim()) {
+        cachedKnowledgeText = content.trim();
+        return cachedKnowledgeText;
+      }
+    } catch {
+      // Continue trying next candidate path
+    }
+  }
+
+  return null;
+};
+
 // ============================================
-export const initializeKnowledgeBase = async (): Promise<void> => {
-  const client = await getMongoClient();
-  const collection = client.db("edureach_db").collection("knowledge_docs");
-
-  // Check if docs exist WITH valid (non-empty) embeddings
-  const docWithEmbedding = await collection.findOne({
-    embedding: { $exists: true, $not: { $size: 0 } },
-  });
-
-  if (docWithEmbedding) {
-    const count = await collection.countDocuments();
-    console.log(` Knowledge base ready (${count} chunks with embeddings)`);
+// Non-Destructive Startup Status Check
+// ============================================
+export const checkKnowledgeBaseStatus = async (): Promise<void> => {
+  if (!process.env.MONGODB_URI || !process.env.GOOGLE_API_KEY) {
+    console.warn("[RAG:STATUS] Skipping knowledge status check: MONGODB_URI or GOOGLE_API_KEY not configured.");
     return;
   }
 
-  // If docs exist but embeddings are empty → delete and re-index
-  const existingCount = await collection.countDocuments();
-  if (existingCount > 0) {
-    console.log(` Found ${existingCount} chunks with EMPTY embeddings — deleting & re-indexing...`);
-    await collection.deleteMany({});
-  }
-
-  console.log(" Indexing knowledge base...");
-
-  // Verify API key FIRST with a test embedding
-  const embeddings = getEmbeddings();
   try {
-    const testResult = await embeddings.embedQuery("test");
-    console.log(` API key OK — embedding dimensions: ${testResult.length}`);
+    const client = await getMongoClient();
+    const collection = client.db(RAG_CONFIG.databaseName).collection(RAG_CONFIG.collectionName);
+    const count = await collection.countDocuments();
+
+    if (count > 0) {
+      console.log(`[RAG:STATUS] Knowledge base online with ${count} indexed chunks.`);
+    } else {
+      console.warn(`[RAG:STATUS] Knowledge base collection '${RAG_CONFIG.collectionName}' is empty.`);
+      console.warn(`             Run 'npm run index:knowledge' to build embeddings.`);
+    }
   } catch (error: any) {
-    console.error(" Embedding test failed!");
-    console.error("   Error:", error.message || error);
-    console.error("   Get key from: https://aistudio.google.com/apikey");
-    throw error;
-  }
-
-  // LOAD
-  const filePath = path.join(__dirname, "../../knowledge-base/edureach-knowledge.txt");
-  const fileContents = await readFile(filePath, "utf8");
-  const docs = [
-    new Document({
-      pageContent: fileContents,
-      metadata: { source: filePath },
-    }),
-  ];
-  if (docs.length === 0) {
-    throw new Error("No documents found in knowledge base file");
-  }
-  const totalCharacters = docs.reduce((sum: number, doc: any) => sum + doc.pageContent.length, 0);
-  console.log(`    Loaded ${totalCharacters} characters`);
-
-  // SPLIT
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 1000,
-    chunkOverlap: 200,
-  });
-  const allSplits = await splitter.splitDocuments(docs);
-  console.log(`    Split into ${allSplits.length} chunks`);
-
-  // EMBED + STORE
-  const vectorStore = new MongoDBAtlasVectorSearch(embeddings, {
-    collection: collection as any,
-    indexName: "edureach_vector_index",
-    textKey: "text",
-    embeddingKey: "embedding",
-  });
-
-  await vectorStore.addDocuments(allSplits);
-
-  // VERIFY
-  const verifyDoc = await collection.findOne({
-    embedding: { $exists: true, $not: { $size: 0 } },
-  });
-
-  if (verifyDoc && Array.isArray(verifyDoc.embedding) && verifyDoc.embedding.length > 0) {
-    console.log(`    ${allSplits.length} chunks stored (${verifyDoc.embedding.length}D embeddings)`);
-    console.log(`     IMPORTANT: Create Atlas Vector Search index with numDimensions: ${verifyDoc.embedding.length}`);
-  } else {
-    await collection.deleteMany({});
-    throw new Error(" Embeddings are empty! Google API returned no vectors.");
+    console.warn(`[RAG:STATUS] Could not check knowledge base status:`, error?.message || error);
   }
 };
 
+// ============================================
+// LangChain Retrieval Tool
+// ============================================
 const createRetrieveTool = (vectorStore: MongoDBAtlasVectorSearch) => {
   return tool(
     async ({ query }: { query: string }) => {
-      const retrievedDocs = await vectorStore.similaritySearch(query, 3);
-      return retrievedDocs
-        .map((doc) => `Source: ${doc.metadata.source}\nContent: ${doc.pageContent}`)
-        .join("\n\n");
+      try {
+        const retrievedDocs = await vectorStore.similaritySearch(query, 3);
+        if (retrievedDocs && retrievedDocs.length > 0) {
+          return retrievedDocs
+            .map((doc) => `Source: ${doc.metadata?.source || "knowledge-base"}\nContent: ${doc.pageContent}`)
+            .join("\n\n");
+        }
+      } catch (vectorError: any) {
+        console.warn(
+          "[RAG:VECTOR_SEARCH_ERROR] Atlas Vector Search query failed:",
+          vectorError?.message || vectorError
+        );
+      }
+
+      return "Information not found in knowledge base. Inform the student to contact the admissions team at admissions@edureach.edu.in or +91 9876543210.";
     },
     {
       name: "retrieve",
       description:
-        "Retrieve information from the EduReach College knowledge base. " +
-        "Use this for any questions about courses, fees, admissions, mentors, campus, placements.",
+        "Retrieve accurate information from the EduReach College knowledge base for courses, fees, admissions, placements, mentors, and campus life.",
       schema: {
         type: "object",
         properties: {
@@ -167,28 +184,39 @@ const createRetrieveTool = (vectorStore: MongoDBAtlasVectorSearch) => {
   );
 };
 
-// --- Get RAG Response ---
-export const getRAGResponse = async (question: string): Promise<string> => {
-  try {
+// ============================================
+// Get Agent Singleton
+// ============================================
+const getOrCreateAgent = async () => {
+  if (!agentInstance) {
     const vectorStore = await getVectorStore();
     const retrieve = createRetrieveTool(vectorStore);
+    const model = getChatModel();
 
-    const model = new ChatGoogleGenerativeAI({
-      model: CHAT_MODEL,
-      temperature: 0.7,
-    });
-
-    const agent = createAgent({
+    agentInstance = createAgent({
       model,
       tools: [retrieve],
       systemPrompt:
-        "You are EduReach Bot, a helpful AI counselor for EduReach College, Hyderabad. " +
-        "ALWAYS use the retrieve tool to search the knowledge base before answering. " +
-        "Be concise, friendly, and professional. " +
-        "If the information is not found, say: " +
-        "'I don't have that information right now. Click Talk to Us to speak with a counselor.'",
+        "You are EduReach Bot, an intelligent, helpful, and friendly AI admissions counselor for EduReach College, Hyderabad. " +
+        "ALWAYS use the retrieve tool to search the knowledge base before providing an answer. " +
+        "Provide clear, concise, and structured answers grounded strictly in retrieved information. " +
+        "If specific details are not available in the knowledge base, politely say: " +
+        "'I don't have that exact detail right now. Please reach out to our admissions team at admissions@edureach.edu.in or +91 9876543210.'",
     });
+  }
+  return agentInstance;
+};
 
+// ============================================
+// RAG Query Handler (Production Safe)
+// ============================================
+export const getRAGResponse = async (question: string): Promise<string> => {
+  if (!process.env.GOOGLE_API_KEY) {
+    return "EduReach Bot is currently configuring AI credentials. For questions regarding admissions, courses, or fees, please contact admissions@edureach.edu.in or call +91 9876543210.";
+  }
+
+  try {
+    const agent = await getOrCreateAgent();
     const result = await agent.invoke({
       messages: [{ role: "user", content: question }],
     });
@@ -196,15 +224,36 @@ export const getRAGResponse = async (question: string): Promise<string> => {
     const messages = result.messages;
     const lastMessage = messages[messages.length - 1];
 
-    if (!lastMessage) {
-      return "I couldn't generate a response. Please try again.";
+    if (!lastMessage || !lastMessage.content) {
+      return "I couldn't retrieve that information right now. Please ask again or contact our admissions office at admissions@edureach.edu.in or call +91 9876543210.";
     }
 
-    return typeof lastMessage.content === "string"
-      ? lastMessage.content
-      : JSON.stringify(lastMessage.content);
-  } catch (error) {
-    console.error(" RAG Agent Error:", error);
-    return "I'm having trouble right now. Please try again or click 'Talk to Us'.";
+    if (typeof lastMessage.content === "string") {
+      return lastMessage.content;
+    }
+
+    return JSON.stringify(lastMessage.content);
+  } catch (error: any) {
+    console.error("[RAG:PIPELINE_ERROR] Primary agent pipeline error:", error?.message || error);
+    return "I'm having trouble retrieving details right now. Please try asking again or reach out to admissions@edureach.edu.in or +91 9876543210.";
+  }
+};
+
+// ============================================
+// Graceful Cleanup
+// ============================================
+export const closeVectorMongoClient = async (): Promise<void> => {
+  if (mongoClient) {
+    try {
+      await mongoClient.close();
+      mongoClient = null;
+      vectorStoreInstance = null;
+      agentInstance = null;
+      chatModelInstance = null;
+      embeddingsInstance = null;
+      console.log("[RAG:CLEANUP] MongoDB native vector client closed gracefully.");
+    } catch (err) {
+      console.error("[RAG:CLEANUP_ERROR] Error closing MongoDB native client:", err);
+    }
   }
 };

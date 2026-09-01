@@ -62,7 +62,7 @@ describe("Authentication Endpoints & Middleware Validation", () => {
   });
 
   describe("Authentication Middleware Unit Tests", () => {
-    it("should reject requests without cookie or bearer token with 401", () => {
+    it("should reject requests without cookie with 401", () => {
       let statusCode = 0;
       let jsonPayload: any = null;
 
@@ -87,13 +87,13 @@ describe("Authentication Endpoints & Middleware Validation", () => {
       assert.match(jsonPayload.message, /Authentication required/i);
     });
 
-    it("should reject requests with malformed or invalid token with 401", () => {
+    it("should reject requests with malformed or invalid cookie with 401", () => {
       let statusCode = 0;
       let jsonPayload: any = null;
 
       const req: Partial<Request> = {
-        cookies: {},
-        headers: { authorization: "Bearer invalid.fake.token" },
+        cookies: { [AUTH_COOKIE_NAME]: "invalid.fake.token" },
+        headers: {},
       };
       const res: Partial<Response> = {
         status: (code: number) => {
@@ -133,36 +133,82 @@ describe("Authentication Endpoints & Middleware Validation", () => {
       assert.equal(req.user.userId, "507f1f77bcf86cd799439011");
       assert.equal(req.user.email, "test-user@edureach.edu.in");
     });
-
-    it("should authenticate and populate req.user from Authorization Bearer header", () => {
-      const validToken = generateToken({
-        userId: "607f1f77bcf86cd799439022",
-        email: "bearer-user@edureach.edu.in",
-      });
-
-      let nextCalled = false;
-      const req: Partial<Request> = {
-        cookies: {},
-        headers: { authorization: `Bearer ${validToken}` },
-      };
-      const res: Partial<Response> = {};
-
-      authMiddleware(req as Request, res as Response, () => {
-        nextCalled = true;
-      });
-
-      assert.equal(nextCalled, true);
-      assert.ok(req.user);
-      assert.equal(req.user.userId, "607f1f77bcf86cd799439022");
-    });
   });
 
   describe("Logout Endpoint (POST /api/auth/logout)", () => {
-    it("should return 200 and success response", async () => {
+    it("should return 200 and clear the auth cookie", async () => {
       const res = await request(app).post("/api/auth/logout");
       assert.equal(res.status, 200);
       assert.equal(res.body.success, true);
       assert.equal(res.body.message, "Logged out successfully.");
+
+      const rawCookies = res.headers["set-cookie"];
+      const cookieHeaders = Array.isArray(rawCookies)
+        ? rawCookies
+        : typeof rawCookies === "string"
+          ? [rawCookies]
+          : [];
+      assert.ok(cookieHeaders.length > 0);
+      assert.ok(
+        cookieHeaders.some((cookie) => cookie.startsWith("token=")),
+      );
+    });
+  });
+
+  describe("CORS Policy", () => {
+    it("should allow configured localhost origins in development", async () => {
+      const res = await request(app)
+        .get("/api/health/live")
+        .set("Origin", "http://localhost:5173");
+
+      assert.equal(res.status, 200);
+      assert.equal(res.headers["access-control-allow-origin"], "http://localhost:5173");
+      assert.equal(res.headers["access-control-allow-credentials"], "true");
+    });
+
+    it("should reject unauthorized Vercel origins in production", async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalClientUrl = process.env.CLIENT_URL;
+
+      try {
+        process.env.NODE_ENV = "production";
+        process.env.CLIENT_URL = "https://edureach.example.com";
+
+        const res = await request(app)
+          .get("/api/health/live")
+          .set("Origin", "https://random-project.vercel.app");
+
+        assert.notEqual(
+          res.headers["access-control-allow-origin"],
+          "https://random-project.vercel.app",
+        );
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+        process.env.CLIENT_URL = originalClientUrl;
+      }
+    });
+
+    it("should allow configured production origin", async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalClientUrl = process.env.CLIENT_URL;
+
+      try {
+        process.env.NODE_ENV = "production";
+        process.env.CLIENT_URL = "https://edureach.example.com";
+
+        const res = await request(app)
+          .get("/api/health/live")
+          .set("Origin", "https://edureach.example.com");
+
+        assert.equal(res.status, 200);
+        assert.equal(
+          res.headers["access-control-allow-origin"],
+          "https://edureach.example.com",
+        );
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+        process.env.CLIENT_URL = originalClientUrl;
+      }
     });
   });
 });

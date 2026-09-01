@@ -1,3 +1,4 @@
+import "dotenv/config";
 import mongoose from "mongoose";
 
 const mongooseStateLabels: Record<number, string> = {
@@ -18,33 +19,51 @@ export const getDatabaseHealth = () => {
   };
 };
 
-export const connectDB = async (): Promise<void> => {
-  if (mongoose.connection.readyState === 1) {
-    return;
-  }
+let cachedPromise: Promise<typeof mongoose> | null = null;
 
+const connectDB = async (): Promise<typeof mongoose> => {
   const mongoURI = process.env.MONGODB_URI;
+
   if (!mongoURI) {
-    if (process.env.NODE_ENV === "test") return;
     throw new Error("MONGODB_URI is not defined in environment variables");
   }
 
+  if (mongoose.connection.readyState === 1) {
+    return mongoose;
+  }
+
+  if (mongoose.connection.readyState === 2 && cachedPromise) {
+    return cachedPromise;
+  }
+
   try {
-    const conn = await mongoose.connect(mongoURI, {
+    cachedPromise = mongoose.connect(mongoURI, {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 10000,
     });
+    const conn = await cachedPromise;
     console.log(`MongoDB Connected: ${conn.connection.host} (${conn.connection.name})`);
+    return conn;
   } catch (error) {
-    console.error("Error connecting to MongoDB:", error);
-    if (process.env.NODE_ENV !== "test") {
-      throw error;
+    cachedPromise = null;
+    if (error instanceof Error) {
+      console.error(`Error connecting to MongoDB: ${error.message}`);
+    } else {
+      console.error(`Error connecting to MongoDB: ${error}`);
     }
+    throw error;
   }
 };
 
 export const closeDatabaseConnections = async (): Promise<void> => {
   if (mongoose.connection.readyState !== 0) {
-    await mongoose.disconnect();
+    try {
+      await mongoose.disconnect();
+      cachedPromise = null;
+      console.log("Mongoose disconnected gracefully.");
+    } catch (err) {
+      console.error("Error during Mongoose disconnect:", err);
+    }
   }
 };
 

@@ -1,28 +1,27 @@
-import type { Response, CookieOptions } from "express";
+import type { CookieOptions } from "express";
 
 export const AUTH_COOKIE_NAME = "token";
 
-export const getCookieOptions = (): CookieOptions => {
+const getBaseCookieOptions = (): CookieOptions => {
   const isProd = process.env.NODE_ENV === "production";
+  const sameSiteEnv = (process.env.COOKIE_SAME_SITE?.toLowerCase() || "lax") as "lax" | "strict" | "none";
+  const sameSite = ["lax", "strict", "none"].includes(sameSiteEnv) ? sameSiteEnv : "lax";
+
   return {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    secure: isProd || sameSite === "none",
+    sameSite,
     path: "/",
   };
 };
 
-export const setAuthCookie = (res: Response, token: string): void => {
-  res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
+export const getAuthCookieOptions = (): CookieOptions => {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+  };
 };
 
-export const clearAuthCookie = (res: Response): void => {
-  const isProd = process.env.NODE_ENV === "production";
-  res.clearCookie(AUTH_COOKIE_NAME, {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
-    path: "/",
-  });
+export const getClearCookieOptions = (): CookieOptions => {
+  return getBaseCookieOptions();
 };

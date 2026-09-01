@@ -1,58 +1,56 @@
-import { Router, type Request, type Response } from "express";
-import mongoose from "mongoose";
+import { Router } from "express";
+import type { Request, Response } from "express";
+import { getDatabaseHealth } from "../config/database.config.ts";
+import { RAG_CONFIG } from "../config/rag.config.ts";
 
 const router = Router();
 
+// GET /api/health/live — Process Liveness Probe
 router.get("/live", (_req: Request, res: Response) => {
   res.status(200).json({
     success: true,
     status: "alive",
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
   });
 });
 
+// GET /api/health/ready — Dependency Readiness Probe (MongoDB)
 router.get("/ready", (_req: Request, res: Response) => {
-  const dbState = mongoose.connection.readyState;
-  const isDbReady = dbState === 1;
+  const dbHealth = getDatabaseHealth();
+  const isReady = dbHealth.state === "connected";
 
-  if (isDbReady) {
-    res.status(200).json({
-      success: true,
-      status: "ready",
-      database: "connected",
-      timestamp: new Date().toISOString(),
-    });
-  } else {
-    res.status(503).json({
-      success: false,
-      status: "not_ready",
-      database: dbState === 2 ? "connecting" : "disconnected",
-      timestamp: new Date().toISOString(),
-    });
-  }
+  res.status(isReady ? 200 : 503).json({
+    success: isReady,
+    status: isReady ? "ready" : "not_ready",
+    database: dbHealth.state,
+    timestamp: new Date().toISOString(),
+  });
 });
 
+// GET /api/health — General Health Overview
 router.get("/", (_req: Request, res: Response) => {
-  const dbState = mongoose.connection.readyState;
-  const isHealthy = dbState === 1;
+  const dbHealth = getDatabaseHealth();
+  const isHealthy = dbHealth.state === "connected";
 
   res.status(isHealthy ? 200 : 503).json({
     success: isHealthy,
+    message: isHealthy ? "EduReach Server is healthy." : "Server is running, but database is not ready.",
     data: {
       server: "up",
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
       database: {
-        status: dbState === 1 ? "connected" : "disconnected",
-        readyState: dbState,
+        state: dbHealth.state,
+        connected: isHealthy,
       },
       auth: {
         jwtConfigured: Boolean(process.env.JWT_SECRET),
       },
       ai: {
         googleApiConfigured: Boolean(process.env.GOOGLE_API_KEY),
+        chatModel: process.env.GEMINI_CHAT_MODEL || RAG_CONFIG.defaultChatModel,
+        embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || RAG_CONFIG.defaultEmbeddingModel,
       },
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
     },
   });
 });
