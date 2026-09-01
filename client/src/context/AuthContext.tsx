@@ -11,7 +11,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (token: string) => void;
+  login: (token: string, userData?: User) => void;
   logout: () => void;
 }
 
@@ -36,13 +36,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = (token: string) => {
+  const login = (token: string, userData?: User) => {
     localStorage.setItem("token", token);
+    if (userData) {
+      setUser(userData);
+    }
     getMe()
       .then((data) => setUser(data.user))
       .catch(() => {
-        localStorage.removeItem("token");
-        setUser(null);
+        if (!userData) {
+          localStorage.removeItem("token");
+          setUser(null);
+        }
       });
   };
 
@@ -58,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used inside AuthProvider");

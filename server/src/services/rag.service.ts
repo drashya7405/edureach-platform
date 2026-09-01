@@ -1,3 +1,4 @@
+import "dotenv/config";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -11,39 +12,50 @@ import {
 import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
-// --- MongoDB Native Client (for LangChain vector operations) ---
-// ---- __dirname for ESM ----
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ---- MongoDB native client ----
+// ---- MongoDB native client singleton ----
 let mongoClient: MongoClient | null = null;
 
-const CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
-const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001";
+export const getChatModelName = (): string => {
+  return process.env.GEMINI_CHAT_MODEL || "gemini-1.5-flash";
+};
 
-const getMongoClient = async (): Promise<MongoClient> => {
+export const getEmbeddingModelName = (): string => {
+  return process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004";
+};
+
+export const getMongoClient = async (): Promise<MongoClient> => {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("MONGODB_URI is not defined in environment variables");
+  }
+
   if (!mongoClient) {
-    mongoClient = new MongoClient(process.env.MONGODB_URI || "");
+    mongoClient = new MongoClient(uri, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 10000,
+    });
     await mongoClient.connect();
   }
   return mongoClient;
 };
 
 // ---- Google GenAI Embeddings ----
-// gemini-embedding-001 → default 3072 dimensions (FREE, same API key as Gemini chat)
-const getEmbeddings = () => {
-  if (!process.env.GOOGLE_API_KEY) {
-    throw new Error("GOOGLE_API_KEY is not set in .env!");
+export const getEmbeddings = (): GoogleGenerativeAIEmbeddings => {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_API_KEY is not set in environment variables!");
   }
   return new GoogleGenerativeAIEmbeddings({
-    apiKey: process.env.GOOGLE_API_KEY,
-    modelName: EMBEDDING_MODEL,
+    apiKey,
+    modelName: getEmbeddingModelName(),
   });
 };
 
 // ---- Vector Store ----
-const getVectorStore = async () => {
+export const getVectorStore = async (): Promise<MongoDBAtlasVectorSearch> => {
   const client = await getMongoClient();
   const collection = client.db("edureach_db").collection("knowledge_docs");
 
@@ -55,11 +67,46 @@ const getVectorStore = async () => {
   });
 };
 
-// --- Initialize Knowledge Base ---
-// / ============================================
-// A) INDEXING — runs ONCE at server startup
+// Helper to resolve knowledge base text
+export const loadKnowledgeBaseText = async (): Promise<string> => {
+  const candidatePaths = [
+    path.join(__dirname, "../../knowledge-base/edureach-knowledge.txt"),
+    path.join(process.cwd(), "server/knowledge-base/edureach-knowledge.txt"),
+    path.join(process.cwd(), "knowledge-base/edureach-knowledge.txt"),
+    path.resolve("server/knowledge-base/edureach-knowledge.txt"),
+    path.resolve("knowledge-base/edureach-knowledge.txt"),
+  ];
+
+  for (const candidate of candidatePaths) {
+    try {
+      const content = await readFile(candidate, "utf8");
+      if (content && content.trim()) {
+        return content;
+      }
+    } catch {
+      // Continue trying next candidate path
+    }
+  }
+
+  // Built-in fallback summary if file is missing
+  return `EduReach College is a premier engineering institution located in Hyderabad, Telangana, India.
+Affiliated with JNTU Hyderabad and approved by AICTE.
+Programs: B.Tech in CSE, ECE, AI & DS, IT, ME, CE. M.Tech in CS, VLSI, Structural Eng. MBA in Finance, Marketing, HR, IT.
+Fees: B.Tech Tuition Rs 1,50,000/yr, Day scholar Rs 1,70,000/yr, Hosteller Rs 2,50,000/yr.
+Placements: 92% overall placement rate, Highest package 42 LPA by Google, 150+ recruiting companies.
+Admissions: TS/AP EAMCET (70%) and Management Quota (30%). Application opens March 1st.
+Contact: admissions@edureach.edu.in, phone +91 9876543210.`;
+};
+
+// ============================================
+// INDEXING — warms up embeddings in MongoDB
 // ============================================
 export const initializeKnowledgeBase = async (): Promise<void> => {
+  if (!process.env.MONGODB_URI || !process.env.GOOGLE_API_KEY) {
+    console.warn(" Skipping knowledge base init: MONGODB_URI or GOOGLE_API_KEY not configured.");
+    return;
+  }
+
   const client = await getMongoClient();
   const collection = client.db("edureach_db").collection("knowledge_docs");
 
@@ -81,34 +128,25 @@ export const initializeKnowledgeBase = async (): Promise<void> => {
     await collection.deleteMany({});
   }
 
-  console.log(" Indexing knowledge base...");
+  console.log(" Indexing EduReach knowledge base...");
 
-  // Verify API key FIRST with a test embedding
   const embeddings = getEmbeddings();
   try {
     const testResult = await embeddings.embedQuery("test");
-    console.log(` API key OK — embedding dimensions: ${testResult.length}`);
+    console.log(` Google GenAI embeddings OK — dimension: ${testResult.length}`);
   } catch (error: any) {
-    console.error(" Embedding test failed!");
-    console.error("   Error:", error.message || error);
-    console.error("   Get key from: https://aistudio.google.com/apikey");
-    throw error;
+    console.error(" Embedding test failed:", error?.message || error);
+    return;
   }
 
   // LOAD
-  const filePath = path.join(__dirname, "../../knowledge-base/edureach-knowledge.txt");
-  const fileContents = await readFile(filePath, "utf8");
+  const fileContents = await loadKnowledgeBaseText();
   const docs = [
     new Document({
       pageContent: fileContents,
-      metadata: { source: filePath },
+      metadata: { source: "edureach-knowledge.txt" },
     }),
   ];
-  if (docs.length === 0) {
-    throw new Error("No documents found in knowledge base file");
-  }
-  const totalCharacters = docs.reduce((sum: number, doc: any) => sum + doc.pageContent.length, 0);
-  console.log(`    Loaded ${totalCharacters} characters`);
 
   // SPLIT
   const splitter = new RecursiveCharacterTextSplitter({
@@ -116,7 +154,7 @@ export const initializeKnowledgeBase = async (): Promise<void> => {
     chunkOverlap: 200,
   });
   const allSplits = await splitter.splitDocuments(docs);
-  console.log(`    Split into ${allSplits.length} chunks`);
+  console.log(` Split into ${allSplits.length} chunks`);
 
   // EMBED + STORE
   const vectorStore = new MongoDBAtlasVectorSearch(embeddings, {
@@ -128,33 +166,41 @@ export const initializeKnowledgeBase = async (): Promise<void> => {
 
   await vectorStore.addDocuments(allSplits);
 
-  // VERIFY
   const verifyDoc = await collection.findOne({
     embedding: { $exists: true, $not: { $size: 0 } },
   });
 
   if (verifyDoc && Array.isArray(verifyDoc.embedding) && verifyDoc.embedding.length > 0) {
-    console.log(`    ${allSplits.length} chunks stored (${verifyDoc.embedding.length}D embeddings)`);
-    console.log(`     IMPORTANT: Create Atlas Vector Search index with numDimensions: ${verifyDoc.embedding.length}`);
+    console.log(` ${allSplits.length} chunks stored with ${verifyDoc.embedding.length}D embeddings.`);
+    console.log(` Atlas Vector Search index requirement: name="edureach_vector_index", numDimensions=${verifyDoc.embedding.length}`);
   } else {
     await collection.deleteMany({});
-    throw new Error(" Embeddings are empty! Google API returned no vectors.");
+    throw new Error("Embeddings could not be verified in MongoDB Atlas.");
   }
 };
 
 const createRetrieveTool = (vectorStore: MongoDBAtlasVectorSearch) => {
   return tool(
     async ({ query }: { query: string }) => {
-      const retrievedDocs = await vectorStore.similaritySearch(query, 3);
-      return retrievedDocs
-        .map((doc) => `Source: ${doc.metadata.source}\nContent: ${doc.pageContent}`)
-        .join("\n\n");
+      try {
+        const retrievedDocs = await vectorStore.similaritySearch(query, 3);
+        if (retrievedDocs && retrievedDocs.length > 0) {
+          return retrievedDocs
+            .map((doc) => `Source: ${doc.metadata?.source || "knowledge-base"}\nContent: ${doc.pageContent}`)
+            .join("\n\n");
+        }
+      } catch (vectorError: any) {
+        console.warn(" Atlas Vector Search query failed, falling back to direct context:", vectorError?.message || vectorError);
+      }
+
+      // Fallback context from knowledge text
+      const knowledge = await loadKnowledgeBaseText();
+      return `Context from EduReach Knowledge Base:\n${knowledge.slice(0, 3000)}`;
     },
     {
       name: "retrieve",
       description:
-        "Retrieve information from the EduReach College knowledge base. " +
-        "Use this for any questions about courses, fees, admissions, mentors, campus, placements.",
+        "Retrieve accurate information from the EduReach College knowledge base for courses, fees, admissions, placements, mentors, and campus life.",
       schema: {
         type: "object",
         properties: {
@@ -169,24 +215,29 @@ const createRetrieveTool = (vectorStore: MongoDBAtlasVectorSearch) => {
 
 // --- Get RAG Response ---
 export const getRAGResponse = async (question: string): Promise<string> => {
+  if (!process.env.GOOGLE_API_KEY) {
+    return "EduReach Bot is currently being configured with AI credentials. For questions regarding admissions, courses, or fees, please contact admissions@edureach.edu.in or call +91 9876543210.";
+  }
+
   try {
     const vectorStore = await getVectorStore();
     const retrieve = createRetrieveTool(vectorStore);
 
     const model = new ChatGoogleGenerativeAI({
-      model: CHAT_MODEL,
+      model: getChatModelName(),
       temperature: 0.7,
+      apiKey: process.env.GOOGLE_API_KEY,
     });
 
     const agent = createAgent({
       model,
       tools: [retrieve],
       systemPrompt:
-        "You are EduReach Bot, a helpful AI counselor for EduReach College, Hyderabad. " +
-        "ALWAYS use the retrieve tool to search the knowledge base before answering. " +
-        "Be concise, friendly, and professional. " +
-        "If the information is not found, say: " +
-        "'I don't have that information right now. Click Talk to Us to speak with a counselor.'",
+        "You are EduReach Bot, an intelligent, helpful, and friendly AI admissions counselor for EduReach College, Hyderabad. " +
+        "ALWAYS use the retrieve tool to search the knowledge base before providing an answer. " +
+        "Provide clear, concise, and structured answers. " +
+        "If specific details are not available in the knowledge base, politely say: " +
+        "'I don't have that exact detail right now. Please reach out to our admissions team at admissions@edureach.edu.in or +91 9876543210.'",
     });
 
     const result = await agent.invoke({
@@ -196,15 +247,47 @@ export const getRAGResponse = async (question: string): Promise<string> => {
     const messages = result.messages;
     const lastMessage = messages[messages.length - 1];
 
-    if (!lastMessage) {
-      return "I couldn't generate a response. Please try again.";
+    if (!lastMessage || !lastMessage.content) {
+      return "I couldn't generate a response. Please ask again or contact our admissions office.";
     }
 
-    return typeof lastMessage.content === "string"
-      ? lastMessage.content
-      : JSON.stringify(lastMessage.content);
-  } catch (error) {
-    console.error(" RAG Agent Error:", error);
-    return "I'm having trouble right now. Please try again or click 'Talk to Us'.";
+    if (typeof lastMessage.content === "string") {
+      return lastMessage.content;
+    }
+
+    return JSON.stringify(lastMessage.content);
+  } catch (error: any) {
+    console.error("RAG Counselor Error:", error?.message || error);
+
+    // Direct LLM fallback with knowledge base if agent loop encountered an issue
+    try {
+      const knowledge = await loadKnowledgeBaseText();
+      const model = new ChatGoogleGenerativeAI({
+        model: getChatModelName(),
+        temperature: 0.5,
+        apiKey: process.env.GOOGLE_API_KEY,
+      });
+
+      const prompt = `You are EduReach Bot, the admissions counselor for EduReach College, Hyderabad.
+Answer the following student question accurately using the provided EduReach College knowledge base.
+Be concise, polite, and helpful.
+
+Knowledge Base:
+${knowledge}
+
+Student Question:
+${question}
+
+Answer:`;
+
+      const response = await model.invoke(prompt);
+      if (typeof response.content === "string" && response.content.trim()) {
+        return response.content;
+      }
+    } catch (fallbackError) {
+      console.error("Direct fallback failed:", fallbackError);
+    }
+
+    return "I'm having trouble retrieving details right now. Please try asking again or reach out to admissions@edureach.edu.in or +91 9876543210.";
   }
 };

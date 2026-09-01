@@ -1,15 +1,10 @@
+import "dotenv/config";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import dotenv from "dotenv";
 import app from "./app.ts";
 import connectDB from "./config/database.config.ts";
 import { initializeKnowledgeBase } from "./services/rag.service.ts";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const PORT = Number(process.env.PORT || 5000);
 

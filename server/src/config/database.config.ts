@@ -1,3 +1,4 @@
+import "dotenv/config";
 import mongoose from "mongoose";
 
 const mongooseStateLabels: Record<number, string> = {
@@ -18,24 +19,39 @@ export const getDatabaseHealth = () => {
   };
 };
 
-const connectDB = async (): Promise<void> => {
+let cachedPromise: Promise<typeof mongoose> | null = null;
+
+const connectDB = async (): Promise<typeof mongoose> => {
+  const mongoURI = process.env.MONGODB_URI;
+
+  if (!mongoURI) {
+    throw new Error("MONGODB_URI is not defined in environment variables");
+  }
+
+  if (mongoose.connection.readyState === 1) {
+    return mongoose;
+  }
+
+  if (mongoose.connection.readyState === 2 && cachedPromise) {
+    return cachedPromise;
+  }
+
   try {
-    const mongoURI = process.env.MONGODB_URI;
-
-    if (!mongoURI) {
-      throw new Error("MONGODB_URI is not defined in environment variables");
-    }
-
-    const conn = await mongoose.connect(mongoURI);
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    console.log(`MongoDB Database Name: ${conn.connection.name}`);
+    cachedPromise = mongoose.connect(mongoURI, {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 10000,
+    });
+    const conn = await cachedPromise;
+    console.log(`MongoDB Connected: ${conn.connection.host} (${conn.connection.name})`);
+    return conn;
   } catch (error) {
+    cachedPromise = null;
     if (error instanceof Error) {
       console.error(`Error connecting to MongoDB: ${error.message}`);
     } else {
       console.error(`Error connecting to MongoDB: ${error}`);
     }
-    process.exit(1);
+    throw error;
   }
 };
 

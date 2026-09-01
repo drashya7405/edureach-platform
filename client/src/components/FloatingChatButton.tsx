@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -8,6 +8,15 @@ export default function FloatingChatButton() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [chatOpen, setChatOpen] = useState(false);
+  const [showLabel, setShowLabel] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setShowLabel(false);
+    }, 3200);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const handleClick = () => {
     if (user) {
@@ -17,15 +26,33 @@ export default function FloatingChatButton() {
     }
   };
 
+  const handleMouseEnter = () => {
+    setShowLabel(true);
+  };
+
+  const handleMouseLeave = () => {
+    if (!chatOpen) {
+      setShowLabel(false);
+    }
+  };
+
   return (
     <>
       {/* Chat drawer popup */}
       <ChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
 
       {/* Floating button */}
-      <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3">
-        <div className="hidden sm:flex rounded-full border border-maroon/10 bg-white/92 px-4 py-2 text-sm font-semibold text-maroon shadow-[0_12px_30px_rgba(123,30,43,0.12)] backdrop-blur-md">
-          {user ? "Ask EduReach Bot" : "Login to chat"}
+      <div
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <div
+          className={`hidden overflow-hidden sm:flex rounded-full border border-maroon/10 bg-white/92 text-sm font-semibold text-maroon shadow-[0_12px_30px_rgba(123,30,43,0.12)] backdrop-blur-md transition-all duration-300 ${
+            showLabel || chatOpen ? "max-w-xs px-4 py-2 opacity-100" : "max-w-0 px-0 py-2 opacity-0 border-transparent"
+          }`}
+        >
+          <span className="whitespace-nowrap">{user ? "Ask EduReach Bot" : "Login to chat"}</span>
         </div>
         <button
           onClick={handleClick}
@@ -39,6 +66,12 @@ export default function FloatingChatButton() {
         >
           {!chatOpen && (
             <span className="absolute inset-0 rounded-full bg-maroon/20 blur-md transition-opacity duration-300 group-hover:opacity-80" />
+          )}
+          {!chatOpen && (
+            <>
+              <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-amber-400 ring-2 ring-white" />
+              <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-amber-400/70 animate-ping" />
+            </>
           )}
           <MessageCircle
             className={`relative z-10 w-6 h-6 ${chatOpen ? "" : "animate-bounce [animation-duration:2s] [animation-iteration-count:3]"}`}

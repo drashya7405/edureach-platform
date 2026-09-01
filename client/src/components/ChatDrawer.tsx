@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { X, Send, Bot, User, Minus } from "lucide-react";
+import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import { sendMessage } from "../services/chat.service";
 
@@ -48,12 +49,15 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
     setSending(true);
 
     try {
-      // sendMessage now returns { message: "answer text" }
       const data = await sendMessage(messageText);
       const botMsg: Message = { id: Date.now() + 1, text: data.message, sender: "bot" };
       setMessages((prev) => [...prev, botMsg]);
-    } catch {
-      const errorMsg: Message = { id: Date.now() + 1, text: "Sorry, something went wrong. Please try again.", sender: "bot" };
+    } catch (err: unknown) {
+      let errorText = "I'm having a little trouble connecting right now. Please try again or reach out to our admissions team.";
+      if (axios.isAxiosError(err) && err.response?.data?.message) {
+        errorText = err.response.data.message;
+      }
+      const errorMsg: Message = { id: Date.now() + 1, text: errorText, sender: "bot" };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setSending(false);
@@ -70,19 +74,23 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed bottom-24 right-6 z-50 w-[380px] max-w-[calc(100vw-2rem)] h-[520px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200">
+    <div className="fixed bottom-24 right-6 z-50 h-[520px] w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl flex flex-col">
       {/* Header */}
-      <div className="bg-maroon px-4 py-3 flex items-center justify-between">
+      <div className="relative overflow-hidden bg-gradient-to-r from-maroon via-maroon-dark to-[#41111a] px-4 py-3 flex items-center justify-between">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,214,102,0.22),transparent_32%)]" />
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+          <div className="relative z-10 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center ring-1 ring-white/15">
             <Bot className="w-4 h-4 text-white" />
           </div>
-          <div>
+          <div className="relative z-10">
+            <div className="mb-1 inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-200">
+              Admissions Concierge
+            </div>
             <h3 className="text-white font-semibold text-sm">EduReach Bot</h3>
-            <p className="text-white/70 text-xs">Ask me anything</p>
+            <p className="text-white/70 text-xs">Instant answers on courses, fees, and placements</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="relative z-10 flex items-center gap-1">
           <button onClick={onClose} className="text-white/70 hover:text-white p-1 transition-colors duration-200">
             <Minus className="w-4 h-4" />
           </button>

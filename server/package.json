@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node --import tsx src/server.ts"
+    "start": "node --import tsx src/server.ts",
+    "seed:rag": "tsx -e \"import('./src/services/rag.service.ts').then(m => m.initializeKnowledgeBase())\""
   },
   "dependencies": {
     "@langchain/community": "^1.1.25",
