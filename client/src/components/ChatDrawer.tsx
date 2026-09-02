@@ -3,7 +3,7 @@ import { X, Send, Bot, User, Minus, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, type User as AuthUser } from "../context/AuthContext";
 import { sendMessage } from "../services/chat.service";
 
 interface Message {
@@ -27,18 +27,90 @@ const quickQuestions = [
 
 const MAX_MESSAGE_LENGTH = 1000;
 
+const getInitialMessages = (u: AuthUser | null): Message[] => [
+  {
+    id: 1,
+    text: `Hi ${u?.name?.split(" ")[0] || "there"}! I'm EduReach Bot. Ask me anything about courses, fees, admissions, or campus life.`,
+    sender: "bot",
+  },
+];
+
+const getStorageKey = (userId: string | undefined): string | null => {
+  if (!userId) return null;
+  return `chatMessages_${userId}`;
+};
+
 export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   const { user } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      text: `Hi ${user?.name?.split(" ")[0] || "there"}! I'm EduReach Bot. Ask me anything about courses, fees, admissions, or campus life.`,
-      sender: "bot",
-    },
-  ]);
+  const currentUserId = user?.id;
+  const activeUserRef = useRef<string | undefined>(currentUserId);
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (currentUserId) {
+      try {
+        const stored = localStorage.getItem(`chatMessages_${currentUserId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+    return getInitialMessages(user);
+  });
+
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync / Reset chat messages when authenticated user changes or logs out
+  useEffect(() => {
+    activeUserRef.current = currentUserId;
+    setSending(false);
+    setInput("");
+
+    if (!currentUserId) {
+      // User is logged out or guest: immediately reset in-memory chat state to guest welcome
+      setMessages(getInitialMessages(null));
+      return;
+    }
+
+    // Load isolated history for this specific user
+    try {
+      const key = getStorageKey(currentUserId);
+      if (key) {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load user chat history:", e);
+    }
+
+    // Default welcome message for the newly authenticated user
+    setMessages(getInitialMessages(user));
+  }, [currentUserId, user]);
+
+  // Persist messages whenever messages state changes for the active authenticated user
+  useEffect(() => {
+    if (!currentUserId) return;
+    try {
+      const key = getStorageKey(currentUserId);
+      if (key) {
+        localStorage.setItem(key, JSON.stringify(messages));
+      }
+    } catch (e) {
+      console.warn("Failed to save user chat history:", e);
+    }
+  }, [messages, currentUserId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -52,6 +124,7 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
       return;
     }
 
+    const sendingUserId = currentUserId;
     const userMsg: Message = { id: Date.now(), text: messageText, sender: "user" };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
@@ -59,9 +132,14 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
 
     try {
       const data = await sendMessage(messageText);
-      const botMsg: Message = { id: Date.now() + 1, text: data.message, sender: "bot" };
-      setMessages((prev) => [...prev, botMsg]);
+      // Guard against race conditions if user switched during API request
+      if (activeUserRef.current === sendingUserId) {
+        const botMsg: Message = { id: Date.now() + 1, text: data.message, sender: "bot" };
+        setMessages((prev) => [...prev, botMsg]);
+      }
     } catch (err: unknown) {
+      if (activeUserRef.current !== sendingUserId) return;
+
       let errorText = "I'm having a little trouble connecting right now. Please try asking again or reach out to our admissions team.";
       let isAuthErr = false;
 
@@ -82,7 +160,9 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
-      setSending(false);
+      if (activeUserRef.current === sendingUserId) {
+        setSending(false);
+      }
     }
   };
 
@@ -248,7 +328,7 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
                 key={q}
                 onClick={() => void handleSend(q)}
                 disabled={sending}
-                className="text-xs px-2.5 py-1 bg-white border border-maroon/20 text-maroon rounded-full hover:bg-maroon hover:text-white transition-colors duration-200 disabled:opacity-50"
+                className="text-xs px-2.5 py-1 bg-white border border-[#7B1E2B]/25 text-[#7B1E2B] rounded-full hover:!bg-[#7B1E2B] hover:!text-white transition-colors duration-200 disabled:opacity-50 cursor-pointer shadow-xs font-medium"
               >
                 {q}
               </button>

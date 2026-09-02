@@ -20,34 +20,6 @@
   --font-body: "Source Sans 3", system-ui, sans-serif;
 }
 
-.bg-maroon {
-  background-color: #7B1E2B;
-}
-
-.bg-maroon-dark {
-  background-color: #5A1520;
-}
-
-.bg-maroon-light {
-  background-color: #9B3344;
-}
-
-.bg-cream {
-  background-color: #faf7f5;
-}
-
-.text-maroon {
-  color: #7B1E2B;
-}
-
-.text-maroon-dark {
-  color: #5A1520;
-}
-
-.border-maroon {
-  border-color: #7B1E2B;
-}
-
 .btn-primary {
   background-color: #7B1E2B;
   color: #ffffff;
