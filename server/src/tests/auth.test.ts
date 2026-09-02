@@ -62,7 +62,7 @@ describe("Authentication Endpoints & Middleware Validation", () => {
   });
 
   describe("Authentication Middleware Unit Tests", () => {
-    it("should reject requests without cookie with 401", () => {
+    it("should reject requests without Authorization header or cookie with 401", () => {
       let statusCode = 0;
       let jsonPayload: any = null;
 
@@ -87,13 +87,13 @@ describe("Authentication Endpoints & Middleware Validation", () => {
       assert.match(jsonPayload.message, /Authentication required/i);
     });
 
-    it("should reject requests with malformed or invalid cookie with 401", () => {
+    it("should reject requests with invalid Bearer token with 401", () => {
       let statusCode = 0;
       let jsonPayload: any = null;
 
       const req: Partial<Request> = {
-        cookies: { [AUTH_COOKIE_NAME]: "invalid.fake.token" },
-        headers: {},
+        cookies: {},
+        headers: { authorization: "Bearer invalid.fake.token" },
       };
       const res: Partial<Response> = {
         status: (code: number) => {
@@ -111,7 +111,30 @@ describe("Authentication Endpoints & Middleware Validation", () => {
       assert.equal(jsonPayload.success, false);
     });
 
-    it("should authenticate and populate req.user from HTTP-only cookie", () => {
+    it("should authenticate and populate req.user from Authorization: Bearer token", () => {
+      const validToken = generateToken({
+        userId: "507f1f77bcf86cd799439011",
+        email: "test-user@edureach.edu.in",
+      });
+
+      let nextCalled = false;
+      const req: Partial<Request> = {
+        cookies: {},
+        headers: { authorization: `Bearer ${validToken}` },
+      };
+      const res: Partial<Response> = {};
+
+      authMiddleware(req as Request, res as Response, () => {
+        nextCalled = true;
+      });
+
+      assert.equal(nextCalled, true);
+      assert.ok(req.user);
+      assert.equal(req.user.userId, "507f1f77bcf86cd799439011");
+      assert.equal(req.user.email, "test-user@edureach.edu.in");
+    });
+
+    it("should authenticate and populate req.user from fallback HTTP-only cookie", () => {
       const validToken = generateToken({
         userId: "507f1f77bcf86cd799439011",
         email: "test-user@edureach.edu.in",
@@ -132,6 +155,23 @@ describe("Authentication Endpoints & Middleware Validation", () => {
       assert.ok(req.user);
       assert.equal(req.user.userId, "507f1f77bcf86cd799439011");
       assert.equal(req.user.email, "test-user@edureach.edu.in");
+    });
+  });
+
+  describe("Protected Endpoint (GET /api/auth/me)", () => {
+    it("should return 401 when accessed without Authorization header or cookie", async () => {
+      const res = await request(app).get("/api/auth/me");
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
+      assert.match(res.body.message, /Authentication required/i);
+    });
+
+    it("should return 401 when accessed with invalid Bearer token", async () => {
+      const res = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", "Bearer invalid.mock.jwt");
+      assert.equal(res.status, 401);
+      assert.equal(res.body.success, false);
     });
   });
 

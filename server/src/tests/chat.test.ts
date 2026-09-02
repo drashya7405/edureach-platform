@@ -20,7 +20,7 @@ describe("Chat Endpoint Protection & Validation (POST /api/chat/message)", () =>
   it("should return 400 when message is empty", async () => {
     const res = await request(app)
       .post("/api/chat/message")
-      .set("Cookie", [`token=${validToken}`])
+      .set("Authorization", `Bearer ${validToken}`)
       .send({ message: "" });
 
     assert.equal(res.status, 400);
@@ -32,7 +32,7 @@ describe("Chat Endpoint Protection & Validation (POST /api/chat/message)", () =>
     const longMessage = "A".repeat(1001);
     const res = await request(app)
       .post("/api/chat/message")
-      .set("Cookie", [`token=${validToken}`])
+      .set("Authorization", `Bearer ${validToken}`)
       .send({ message: longMessage });
 
     assert.equal(res.status, 400);

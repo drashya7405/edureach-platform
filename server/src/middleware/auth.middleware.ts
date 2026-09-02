@@ -13,8 +13,18 @@ declare global {
 
 const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   try {
-    // Read JWT from secure HTTP-only cookie
-    const token: string | undefined = req.cookies?.[AUTH_COOKIE_NAME];
+    let token: string | undefined;
+
+    // 1. Primary: Extract JWT from Authorization: Bearer <token>
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7).trim();
+    }
+
+    // 2. Secondary / Fallback: Read JWT from HTTP-only cookie
+    if (!token && req.cookies?.[AUTH_COOKIE_NAME]) {
+      token = req.cookies[AUTH_COOKIE_NAME];
+    }
 
     if (!token) {
       res.status(401).json({

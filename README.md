@@ -49,7 +49,7 @@ Express API (Port 3001)
                     edureach_vector_index
 ```
 
-On startup, the server connects to MongoDB, starts Express, and runs a read-only knowledge-base probe. It never destructively drops or rebuilds knowledge embeddings on startup. Authentication uses secure HTTP-only cookies, with credentials automatically sent by Axios.
+On startup, the server connects to MongoDB, starts Express, and runs a read-only knowledge-base probe. It never destructively drops or rebuilds knowledge embeddings on startup. Authentication uses JWT Bearer tokens passed via `Authorization: Bearer <token>` (with optional cookie fallback).
 
 ## Technology stack
 
@@ -58,7 +58,7 @@ On startup, the server connects to MongoDB, starts Express, and runs a read-only
 | Client | React 19, TypeScript, Vite 6, React Router DOM 7 |
 | Styling | Tailwind CSS 4 via `@tailwindcss/vite`, custom CSS variables, responsive utility classes |
 | UI | Lucide React icons, React Hot Toast notifications |
-| HTTP | Axios configured with credentials (`withCredentials: true`) for HTTP-only cookie authentication |
+| HTTP | Axios with automatic `Authorization: Bearer <token>` request interceptor |
 | Server | Node.js, Express 4, TypeScript, `tsx` |
 | Authentication | JSON Web Tokens (`jsonwebtoken`) and `bcryptjs` (10 salt rounds) |
 | Data | MongoDB Atlas, Mongoose, MongoDB native driver |
@@ -175,11 +175,11 @@ All responses use a `success` flag; successful payloads are returned under `data
 | Method and endpoint | Auth | Request body | Success result | Notes |
 | --- | --- | --- | --- | --- |
 | `GET /api/health` | No | — | Server/database state, JWT and Gemini configuration flags, timestamp | Returns `200` when MongoDB is connected; otherwise `503` |
-| `POST /api/auth/register` | No | `name`, `email`, `password`, `phone` (optional) | Sets HTTP-only cookie, returns user object | Validates email, password >= 6 chars; rejects duplicates with `409` |
-| `POST /api/auth/login` | No | `email`, `password` | Sets HTTP-only cookie, returns user object | Incorrect credentials return `401` |
-| `POST /api/auth/logout` | No | — | Clears HTTP-only cookie | Returns 200 on logout |
-| `GET /api/auth/me` | HTTP-only cookie | — | Current user excluding password | Missing, invalid, or expired session returns `401` |
-| `POST /api/chat/message` | Yes (authMiddleware + rateLimiter) | `message` (1-1000 chars) | `{ message: string }` | Gated on auth and input validation; returns AI counselor response |
+| `POST /api/auth/register` | No | `name`, `email`, `password`, `phone` (optional) | `{ token: string, user: object }` | Validates email, password >= 6 chars; rejects duplicates with `409` |
+| `POST /api/auth/login` | No | `email`, `password` | `{ token: string, user: object }` | Returns JWT and user object; invalid credentials return `401` |
+| `POST /api/auth/logout` | No | — | Clears cookie / informs client | Returns 200 on logout |
+| `GET /api/auth/me` | Bearer JWT / Cookie | — | Current user excluding password | Missing, invalid, or expired token returns `401` |
+| `POST /api/chat/message` | Bearer JWT / Cookie (rateLimiter) | `message` (1-1000 chars) | `{ message: string }` | Gated on auth and input validation; returns AI counselor response |
 
 ### User model
 

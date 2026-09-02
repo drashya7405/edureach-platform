@@ -11,7 +11,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (userData?: User) => void;
+  login: (userData?: User, token?: string) => void;
   logout: () => Promise<void>;
 }
 
@@ -22,18 +22,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Verify active session via HTTP-only cookie
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
+    // Verify active session via JWT Bearer token
     getMe()
       .then((data) => {
         setUser(data.user);
       })
       .catch(() => {
+        localStorage.removeItem("token");
         setUser(null);
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const login = (userData?: User) => {
+  const login = (userData?: User, token?: string) => {
+    if (token) {
+      localStorage.setItem("token", token);
+    }
     if (userData) {
       setUser(userData);
     }
@@ -42,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((data) => setUser(data.user))
       .catch(() => {
         if (!userData) {
+          localStorage.removeItem("token");
           setUser(null);
         }
       });
@@ -51,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await logoutUser();
     } finally {
+      localStorage.removeItem("token");
       setUser(null);
     }
   };

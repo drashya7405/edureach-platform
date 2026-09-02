@@ -27,7 +27,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await loginUser({ email: trimmedEmail, password });
-      login(data.user);
+      if (data?.token) {
+        localStorage.setItem("token", data.token);
+      }
+      login(data.user, data?.token);
       toast.success("Welcome back!");
       navigate("/");
     } catch (err: unknown) {
