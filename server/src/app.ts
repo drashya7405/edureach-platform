@@ -26,15 +26,18 @@ app.use(
       const clientEnv = process.env.CLIENT_URL || process.env.FRONTEND_URL || "";
       const allowedList = clientEnv
         .split(",")
-        .map((s) => s.trim().replace(/\/+$/, ""))
+        .map((s) => s.trim().replace(/\/+$/, "").toLowerCase())
         .filter(Boolean);
+
+      const normalizedOrigin = origin.trim().replace(/\/+$/, "");
+      const normalizedOriginLower = normalizedOrigin.toLowerCase();
 
       const isDev = process.env.NODE_ENV !== "production";
       const isLocalhost =
-        origin.startsWith("http://localhost:") ||
-        origin.startsWith("http://127.0.0.1:");
+        normalizedOriginLower.startsWith("http://localhost:") ||
+        normalizedOriginLower.startsWith("http://127.0.0.1:");
 
-      if (allowedList.includes(origin)) {
+      if (allowedList.includes(normalizedOriginLower)) {
         return callback(null, true);
       }
 

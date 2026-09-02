@@ -4,12 +4,21 @@ export const AUTH_COOKIE_NAME = "token";
 
 const getBaseCookieOptions = (): CookieOptions => {
   const isProd = process.env.NODE_ENV === "production";
-  const sameSiteEnv = (process.env.COOKIE_SAME_SITE?.toLowerCase() || "lax") as "lax" | "strict" | "none";
-  const sameSite = ["lax", "strict", "none"].includes(sameSiteEnv) ? sameSiteEnv : "lax";
+  const sameSiteEnv = process.env.COOKIE_SAME_SITE?.toLowerCase();
+  
+  // Default to "none" in production for cross-site (Vercel <-> Render) deployments; "lax" in development
+  const defaultSameSite = isProd ? "none" : "lax";
+  const sameSite: "lax" | "strict" | "none" =
+    sameSiteEnv === "lax" || sameSiteEnv === "strict" || sameSiteEnv === "none"
+      ? sameSiteEnv
+      : defaultSameSite;
+
+  // Browsers require secure=true whenever sameSite="none"
+  const isSecure = sameSite === "none" || isProd;
 
   return {
     httpOnly: true,
-    secure: isProd || sameSite === "none",
+    secure: isSecure,
     sameSite,
     path: "/",
   };
@@ -25,3 +34,4 @@ export const getAuthCookieOptions = (): CookieOptions => {
 export const getClearCookieOptions = (): CookieOptions => {
   return getBaseCookieOptions();
 };
+

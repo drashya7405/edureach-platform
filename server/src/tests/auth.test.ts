@@ -211,4 +211,59 @@ describe("Authentication Endpoints & Middleware Validation", () => {
       }
     });
   });
+
+  describe("Cookie Options Configuration", () => {
+    it("should configure SameSite=None and Secure=true in production by default", async () => {
+      const { getAuthCookieOptions, getClearCookieOptions } = await import("../utils/cookie.util.ts");
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalSameSite = process.env.COOKIE_SAME_SITE;
+
+      try {
+        process.env.NODE_ENV = "production";
+        delete process.env.COOKIE_SAME_SITE;
+
+        const authOpts = getAuthCookieOptions();
+        assert.equal(authOpts.sameSite, "none");
+        assert.equal(authOpts.secure, true);
+        assert.equal(authOpts.httpOnly, true);
+        assert.equal(authOpts.path, "/");
+
+        const clearOpts = getClearCookieOptions();
+        assert.equal(clearOpts.sameSite, "none");
+        assert.equal(clearOpts.secure, true);
+        assert.equal(clearOpts.httpOnly, true);
+        assert.equal(clearOpts.path, "/");
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+        if (originalSameSite !== undefined) {
+          process.env.COOKIE_SAME_SITE = originalSameSite;
+        } else {
+          delete process.env.COOKIE_SAME_SITE;
+        }
+      }
+    });
+
+    it("should configure SameSite=lax and Secure=false in development by default", async () => {
+      const { getAuthCookieOptions } = await import("../utils/cookie.util.ts");
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalSameSite = process.env.COOKIE_SAME_SITE;
+
+      try {
+        process.env.NODE_ENV = "development";
+        delete process.env.COOKIE_SAME_SITE;
+
+        const authOpts = getAuthCookieOptions();
+        assert.equal(authOpts.sameSite, "lax");
+        assert.equal(authOpts.secure, false);
+        assert.equal(authOpts.httpOnly, true);
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+        if (originalSameSite !== undefined) {
+          process.env.COOKIE_SAME_SITE = originalSameSite;
+        } else {
+          delete process.env.COOKIE_SAME_SITE;
+        }
+      }
+    });
+  });
 });
