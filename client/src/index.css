@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+@theme {
+  --color-maroon: #7B1E2B;
+  --color-maroon-light: #9B3344;
+  --color-maroon-dark: #5A1520;
+  --color-cream: #faf7f5;
+  --color-cream-dark: #f0eae5;
+  --font-heading: "Playfair Display", Georgia, serif;
+  --font-body: "Source Sans 3", system-ui, sans-serif;
+}
+
 :root {
   --color-maroon: #7B1E2B;
   --color-maroon-light: #9B3344;

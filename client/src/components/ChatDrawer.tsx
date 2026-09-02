@@ -102,32 +102,31 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
       className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 z-50 h-[520px] max-h-[calc(100vh-6rem)] w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl flex flex-col"
     >
       {/* Header */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-maroon via-maroon-dark to-[#41111a] px-4 py-3 flex items-center justify-between">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,214,102,0.22),transparent_32%)]" />
-        <div className="flex items-center gap-2">
-          <div className="relative z-10 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center ring-1 ring-white/15">
-            <Bot className="w-4 h-4 text-white" />
+      <div className="relative overflow-hidden bg-gradient-to-r from-[#7B1E2B] via-[#611420] to-[#430d16] px-4 py-3 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-2.5">
+          <div className="relative z-10 w-9 h-9 bg-white/15 rounded-xl flex items-center justify-center ring-1 ring-white/20 shadow-sm">
+            <Bot className="w-5 h-5 text-amber-300" />
           </div>
           <div className="relative z-10">
-            <div className="mb-1 inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-200">
+            <div className="mb-0.5 inline-flex rounded-full border border-amber-400/30 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-300">
               Admissions Concierge
             </div>
-            <h3 className="text-white font-semibold text-sm">EduReach Bot</h3>
-            <p className="text-white/70 text-xs">Instant answers on courses, fees, and placements</p>
+            <h3 className="text-white font-bold text-sm tracking-wide">EduReach Bot</h3>
+            <p className="text-white/85 text-xs font-normal">Instant answers on courses, fees, and placements</p>
           </div>
         </div>
         <div className="relative z-10 flex items-center gap-1">
           <button
             onClick={onClose}
             aria-label="Minimize chat"
-            className="text-white/70 hover:text-white p-1 transition-colors duration-200 rounded"
+            className="text-white/80 hover:text-white p-1.5 transition-colors duration-200 rounded-lg hover:bg-white/10"
           >
             <Minus className="w-4 h-4" />
           </button>
           <button
             onClick={onClose}
             aria-label="Close chat"
-            className="text-white/70 hover:text-white p-1 transition-colors duration-200 rounded"
+            className="text-white/80 hover:text-white p-1.5 transition-colors duration-200 rounded-lg hover:bg-white/10"
           >
             <X className="w-4 h-4" />
           </button>
