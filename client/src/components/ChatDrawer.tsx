@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { X, Send, Bot, User, Minus, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 import { useAuth } from "../context/AuthContext";
 import { sendMessage } from "../services/chat.service";
 
@@ -142,7 +143,7 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
                 <Bot className="w-3 h-3 text-white" />
               </div>
             )}
-            <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+            <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed break-words overflow-hidden ${
               msg.sender === "user"
                 ? "bg-maroon text-white rounded-br-sm"
                 : msg.isAuthError
@@ -155,7 +156,54 @@ export default function ChatDrawer({ open, onClose }: ChatDrawerProps) {
                   <span>Session Notice</span>
                 </div>
               )}
-              <p>{msg.text}</p>
+              {msg.sender === "user" ? (
+                <p className="whitespace-pre-wrap">{msg.text}</p>
+              ) : msg.isAuthError ? (
+                <p>{msg.text}</p>
+              ) : (
+                <div className="prose-chat text-gray-800 text-sm leading-relaxed break-words overflow-hidden">
+                  <ReactMarkdown
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                      strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                      em: ({ children }) => <em className="italic">{children}</em>,
+                      h1: ({ children }) => <h1 className="text-base font-bold text-gray-900 mt-2.5 mb-1.5 first:mt-0">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-sm font-bold text-gray-900 mt-2 mb-1 first:mt-0">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-900 mt-2 mb-1 first:mt-0">{children}</h3>,
+                      ul: ({ children }) => <ul className="list-disc list-inside space-y-1 my-1.5 pl-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 my-1.5 pl-1">{children}</ol>,
+                      li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                      code: ({ children, ...props }: React.HTMLAttributes<HTMLElement>) => {
+                        const isMultiLine = String(children).includes("\n");
+                        if (!isMultiLine) {
+                          return (
+                            <code className="bg-gray-100 text-maroon text-xs px-1.5 py-0.5 rounded font-mono" {...props}>
+                              {children}
+                            </code>
+                          );
+                        }
+                        return (
+                          <pre className="bg-gray-900 text-gray-100 text-xs p-2.5 rounded-lg my-2 overflow-x-auto font-mono">
+                            <code {...props}>{children}</code>
+                          </pre>
+                        );
+                      },
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-2 border-maroon/60 pl-2.5 my-1.5 italic text-gray-600">
+                          {children}
+                        </blockquote>
+                      ),
+                      a: ({ href, children }) => (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="text-maroon font-medium underline hover:text-maroon-dark">
+                          {children}
+                        </a>
+                      ),
+                    }}
+                  >
+                    {msg.text}
+                  </ReactMarkdown>
+                </div>
+              )}
               {msg.isAuthError && (
                 <Link
                   to="/login"
