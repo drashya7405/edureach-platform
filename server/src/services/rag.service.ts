@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
 import { MongoClient } from "mongodb";
-import { createAgent, tool } from "langchain";
 import {
   ChatGoogleGenerativeAI,
   GoogleGenerativeAIEmbeddings,
@@ -16,7 +15,6 @@ let mongoClient: MongoClient | null = null;
 let embeddingsInstance: GoogleGenerativeAIEmbeddings | null = null;
 let vectorStoreInstance: MongoDBAtlasVectorSearch | null = null;
 let chatModelInstance: ChatGoogleGenerativeAI | null = null;
-let agentInstance: any = null;
 
 export const getChatModelName = (): string => {
   return process.env.GEMINI_CHAT_MODEL || RAG_CONFIG.defaultChatModel;
@@ -24,6 +22,25 @@ export const getChatModelName = (): string => {
 
 export const getEmbeddingModelName = (): string => {
   return process.env.GEMINI_EMBEDDING_MODEL || RAG_CONFIG.defaultEmbeddingModel;
+};
+
+// ---- Helper: Promise Timeout Wrapper ----
+const withTimeout = <T>(promise: Promise<T>, ms: number, operationName: string): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`[TIMEOUT] ${operationName} exceeded ${ms}ms limit`));
+    }, ms);
+
+    promise
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
 };
 
 // ---- MongoDB Native Client Singleton ----
@@ -37,7 +54,9 @@ export const getMongoClient = async (): Promise<MongoClient> => {
     try {
       mongoClient = new MongoClient(uri, {
         maxPoolSize: 10,
-        serverSelectionTimeoutMS: 10000,
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
+        socketTimeoutMS: 10000,
       });
       await mongoClient.connect();
     } catch (err: any) {
@@ -60,6 +79,7 @@ export const getEmbeddings = (): GoogleGenerativeAIEmbeddings => {
     embeddingsInstance = new GoogleGenerativeAIEmbeddings({
       apiKey,
       modelName: getEmbeddingModelName(),
+      maxRetries: 1,
     });
   }
   return embeddingsInstance;
@@ -91,8 +111,9 @@ export const getChatModel = (): ChatGoogleGenerativeAI => {
   if (!chatModelInstance) {
     chatModelInstance = new ChatGoogleGenerativeAI({
       model: getChatModelName(),
-      temperature: 0.7,
+      temperature: 0.3,
       apiKey,
+      maxRetries: 1,
     });
   }
   return chatModelInstance;
@@ -147,96 +168,106 @@ export const checkKnowledgeBaseStatus = async (): Promise<void> => {
 };
 
 // ============================================
-// LangChain Retrieval Tool
-// ============================================
-const createRetrieveTool = (vectorStore: MongoDBAtlasVectorSearch) => {
-  return tool(
-    async ({ query }: { query: string }) => {
-      try {
-        const retrievedDocs = await vectorStore.similaritySearch(query, 3);
-        if (retrievedDocs && retrievedDocs.length > 0) {
-          return retrievedDocs
-            .map((doc) => `Source: ${doc.metadata?.source || "knowledge-base"}\nContent: ${doc.pageContent}`)
-            .join("\n\n");
-        }
-      } catch (vectorError: any) {
-        console.warn(
-          "[RAG:VECTOR_SEARCH_ERROR] Atlas Vector Search query failed:",
-          vectorError?.message || vectorError
-        );
-      }
-
-      return "Information not found in knowledge base. Inform the student to contact the admissions team at admissions@edureach.edu.in or +91 9876543210.";
-    },
-    {
-      name: "retrieve",
-      description:
-        "Retrieve accurate information from the EduReach College knowledge base for courses, fees, admissions, placements, mentors, and campus life.",
-      schema: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-        },
-        required: ["query"],
-        additionalProperties: false,
-      },
-    }
-  );
-};
-
-// ============================================
-// Get Agent Singleton
-// ============================================
-const getOrCreateAgent = async () => {
-  if (!agentInstance) {
-    const vectorStore = await getVectorStore();
-    const retrieve = createRetrieveTool(vectorStore);
-    const model = getChatModel();
-
-    agentInstance = createAgent({
-      model,
-      tools: [retrieve],
-      systemPrompt:
-        "You are EduReach Bot, an intelligent, helpful, and friendly AI admissions counselor for EduReach College, Hyderabad. " +
-        "ALWAYS use the retrieve tool to search the knowledge base before providing an answer. " +
-        "Provide clear, concise, and structured answers grounded strictly in retrieved information. " +
-        "If specific details are not available in the knowledge base, politely say: " +
-        "'I don't have that exact detail right now. Please reach out to our admissions team at admissions@edureach.edu.in or +91 9876543210.'",
-    });
-  }
-  return agentInstance;
-};
-
-// ============================================
-// RAG Query Handler (Production Safe)
+// High-Performance Grounded RAG Query Handler
 // ============================================
 export const getRAGResponse = async (question: string): Promise<string> => {
+  const startTime = Date.now();
+  console.log(`[CHAT] Request received: "${question.slice(0, 80)}"`);
+
   if (!process.env.GOOGLE_API_KEY) {
+    console.warn("[CHAT] GOOGLE_API_KEY not configured in environment.");
     return "EduReach Bot is currently configuring AI credentials. For questions regarding admissions, courses, or fees, please contact admissions@edureach.edu.in or call +91 9876543210.";
   }
 
+  let retrievedContext = "";
+  let retrievedCount = 0;
+
+  // 1. Vector Search Step (with strict 6s timeout)
+  const retrievalStart = Date.now();
   try {
-    const agent = await getOrCreateAgent();
-    const result = await agent.invoke({
-      messages: [{ role: "user", content: question }],
-    });
+    const vectorStore = await getVectorStore();
+    const initDuration = Date.now() - retrievalStart;
+    console.log(`[CHAT] Retriever / Vector store initialization: ${initDuration} ms`);
 
-    const messages = result.messages;
-    const lastMessage = messages[messages.length - 1];
+    const searchStart = Date.now();
+    const docs = await withTimeout(
+      vectorStore.similaritySearch(question, 3),
+      6000,
+      "Atlas Vector Search"
+    );
+    const searchDuration = Date.now() - searchStart;
+    retrievedCount = docs.length;
+    console.log(`[CHAT] Vector search: ${searchDuration} ms (retrieved ${retrievedCount} chunks)`);
 
-    if (!lastMessage || !lastMessage.content) {
-      return "I couldn't retrieve that information right now. Please ask again or contact our admissions office at admissions@edureach.edu.in or call +91 9876543210.";
+    if (docs && docs.length > 0) {
+      retrievedContext = docs
+        .map((doc, i) => `[Context Chunk ${i + 1}]\n${doc.pageContent}`)
+        .join("\n\n");
     }
-
-    if (typeof lastMessage.content === "string") {
-      return lastMessage.content;
-    }
-
-    return JSON.stringify(lastMessage.content);
-  } catch (error: any) {
-    console.error("[RAG:PIPELINE_ERROR] Primary agent pipeline error:", error?.message || error);
-    return "I'm having trouble retrieving details right now. Please try asking again or reach out to admissions@edureach.edu.in or +91 9876543210.";
+  } catch (vectorError: any) {
+    console.warn(`[CHAT:RETRIEVAL_WARN] Vector retrieval bypassed (${vectorError?.message || vectorError}). Using fallback context.`);
   }
+
+  // 2. Context Preparation Step
+  const prepStart = Date.now();
+  if (!retrievedContext) {
+    const fallbackText = await loadKnowledgeBaseText();
+    if (fallbackText) {
+      retrievedContext = fallbackText.slice(0, 2500);
+      console.log(`[CHAT] Context preparation: ${Date.now() - prepStart} ms (used file fallback context)`);
+    } else {
+      console.log(`[CHAT] Context preparation: ${Date.now() - prepStart} ms (no document context available)`);
+    }
+  } else {
+    console.log(`[CHAT] Context preparation: ${Date.now() - prepStart} ms (context length: ${retrievedContext.length} chars)`);
+  }
+
+  // 3. Single-Turn Grounded Gemini Request (with strict 15s timeout)
+  const geminiStart = Date.now();
+  try {
+    const model = getChatModel();
+
+    const systemInstruction =
+      "You are EduReach Bot, the intelligent, friendly, and helpful AI admissions counselor for EduReach College, Hyderabad.\n" +
+      "Guidelines:\n" +
+      "1. Ground your answers strictly in the provided College Knowledge Base below.\n" +
+      "2. Provide clear, concise, and structured answers for courses, eligibility, fee structures, placements, mentors, and campus life.\n" +
+      "3. If specific details requested by the student are not present in the provided knowledge base, politely say:\n" +
+      "   'I don't have that exact detail right now. Please reach out to our admissions team at admissions@edureach.edu.in or call +91 9876543210.'\n" +
+      "4. Maintain a warm, encouraging, and professional tone.";
+
+    const prompt = `${systemInstruction}\n\nCollege Knowledge Base:\n${retrievedContext || "No specific document matched."}\n\nStudent Question:\n${question}\n\nCounselor Answer:`;
+
+    const response = await withTimeout(
+      model.invoke(prompt),
+      15000,
+      "Gemini Chat Generation"
+    );
+
+    const geminiDuration = Date.now() - geminiStart;
+    console.log(`[CHAT] Gemini request: ${geminiDuration} ms`);
+
+    const totalDuration = Date.now() - startTime;
+    console.log(`[CHAT] Total request: ${totalDuration} ms`);
+
+    if (typeof response.content === "string" && response.content.trim()) {
+      return response.content.trim();
+    }
+    if (Array.isArray(response.content)) {
+      const text = response.content
+        .map((c: any) => (typeof c === "string" ? c : c.text || ""))
+        .join(" ")
+        .trim();
+      if (text) return text;
+    }
+  } catch (geminiError: any) {
+    const geminiDuration = Date.now() - geminiStart;
+    console.error(`[CHAT:ERROR] Gemini generation failed after ${geminiDuration} ms:`, geminiError?.message || geminiError);
+  }
+
+  const totalDuration = Date.now() - startTime;
+  console.log(`[CHAT] Total request (safe exit): ${totalDuration} ms`);
+  return "I'm having trouble retrieving details right now. Please try asking again or reach out to admissions@edureach.edu.in or +91 9876543210.";
 };
 
 // ============================================
@@ -248,7 +279,6 @@ export const closeVectorMongoClient = async (): Promise<void> => {
       await mongoClient.close();
       mongoClient = null;
       vectorStoreInstance = null;
-      agentInstance = null;
       chatModelInstance = null;
       embeddingsInstance = null;
       console.log("[RAG:CLEANUP] MongoDB native vector client closed gracefully.");
@@ -257,3 +287,4 @@ export const closeVectorMongoClient = async (): Promise<void> => {
     }
   }
 };
+

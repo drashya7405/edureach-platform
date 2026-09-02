@@ -2,7 +2,7 @@ import API from "./api";
 
 // Backend response: { success: true, data: { message: "answer text" } }
 export const sendMessage = async (message: string): Promise<{ message: string }> => {
-  const res = await API.post("/chat/message", { message });
+  const res = await API.post("/chat/message", { message }, { timeout: 25000 });
   if (res.data?.data?.message) {
     return { message: res.data.data.message };
   }
